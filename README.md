@@ -56,14 +56,14 @@ npm run build
 
 ## MySQL 8 模式
 
-H2 用于快速演示。MySQL 8 的连接配置已提供，真实 MySQL 8 运行验收尚未完成。
+H2 用于快速演示。2026-10-13 已在 MySQL 8.4.9 上完成26项后端测试、员工提交/部门审批/员工取消的三角色页面流程、排期与消息检查，以及后端和数据库重启后的数据保留验证。周期预约、CSV报表和参数中心尚未实现。
 
 准备一个名为 `meeting_scheduler` 的全新数据库及可访问该数据库的专用账号。连接信息使用环境变量配置，不需要把真实密码写入源码。
 
 以下是在 Windows PowerShell 中启动的示例，在 `backend` 目录执行：
 
 ```powershell
-$env:MEETING_DB_URL = 'jdbc:mysql://127.0.0.1:3306/meeting_scheduler?characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false'
+$env:MEETING_DB_URL = 'jdbc:mysql://127.0.0.1:3306/meeting_scheduler?characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true'
 $env:MEETING_DB_USER = 'meeting_app'
 $dbPassword = Read-Host '数据库密码' -AsSecureString
 $env:MEETING_DB_PASSWORD = [System.Net.NetworkCredential]::new('', $dbPassword).Password
