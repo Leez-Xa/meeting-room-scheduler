@@ -1,0 +1,11 @@
+spring:
+  datasource:
+    url: ${MEETING_DB_URL:jdbc:mysql://127.0.0.1:3306/meeting_scheduler?characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false}
+    username: ${MEETING_DB_USER:meeting_app}
+    password: ${MEETING_DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: ${MEETING_DB_INIT_MODE:never}
+meeting:
+  demo-data: ${MEETING_DEMO_DATA:false}

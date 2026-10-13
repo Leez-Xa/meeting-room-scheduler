@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: meeting-room-scheduler
+  profiles:
+    active: demo
+  jackson:
+    time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+server:
+  port: 8080
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+meeting:
+  rules:
+    workdays: [1, 2, 3, 4, 5]
+    open-time: "09:00"
+    close-time: "18:00"
+    capacity-weight: 0.5
+    device-weight: 0.3
+    floor-weight: 0.2
+    floor-penalty: 20
+    draft-retention-days: 7
+  scheduler-delay-ms: 30000
+  demo-data: false
