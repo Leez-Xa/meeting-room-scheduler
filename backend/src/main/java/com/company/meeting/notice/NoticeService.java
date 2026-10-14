@@ -17,9 +17,11 @@ public class NoticeService {
     private final NoticeRepository notices;
     private final MeetingRepository meetings;
     private final UserRepository users;
+    private final com.company.meeting.config.SystemSettingsService settings;
 
-    public NoticeService(NoticeRepository notices, MeetingRepository meetings, UserRepository users) {
+    public NoticeService(NoticeRepository notices, MeetingRepository meetings, UserRepository users, com.company.meeting.config.SystemSettingsService settings) {
         this.notices = notices; this.meetings = meetings; this.users = users;
+        this.settings = settings;
     }
 
     public NoticeDtos.NoticePage list(UserPrincipal user, boolean unreadOnly, int page, int pageSize) {
@@ -64,9 +66,11 @@ public class NoticeService {
     }
 
     public void sendUpcomingReminders(LocalDateTime now) {
-        for (MeetingRepository.MeetingRow meeting : meetings.upcomingApproved(now, now.plusMinutes(15))) {
+        int minutes = settings.current().rules().reminderMinutes();
+        for (MeetingRepository.MeetingRow meeting : meetings.upcomingApproved(now, now.plusMinutes(minutes))) {
+            // Keep the legacy key stable so changing the lead time cannot resend old reminders.
             notifyParticipants(meeting, "REMINDER_15M:" + meeting.id(), "会议即将开始",
-                    "“" + meeting.subject() + "”将在15分钟内开始，地点：" + meeting.roomName() + "。");
+                    "“" + meeting.subject() + "”将在" + minutes + "分钟内开始，地点：" + meeting.roomName() + "。");
         }
     }
 

@@ -8,19 +8,30 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 import com.company.meeting.config.RuleProperties;
+import com.company.meeting.config.RuleSettings;
+import com.company.meeting.config.SystemSettingsService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public final class BusinessRules {
     public static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
-    private final RuleProperties settings;
+    private final java.util.function.Supplier<RuleSettings> settings;
+    private final java.util.function.Supplier<RuleSettings> lockedSettings;
     private final Clock clock;
     public BusinessRules(RuleProperties settings, Clock clock) {
-        this.settings = settings;
+        this.settings = () -> RuleSettings.from(settings);
+        this.lockedSettings = this.settings;
         this.clock = clock;
     }
-    public RuleProperties settings() { return settings; }
+    @Autowired
+    public BusinessRules(SystemSettingsService settings, Clock clock) {
+        this.settings = () -> settings.current().rules();
+        this.lockedSettings = settings::lockForSubmission;
+        this.clock = clock;
+    }
+    public RuleSettings settings() { return settings.get(); }
     public LocalDateTime now() { return LocalDateTime.now(clock.withZone(ZONE)); }
 
     public static boolean activeResourceStatus(String status) {
@@ -35,17 +46,25 @@ public final class BusinessRules {
     }
 
     public void validateBookingWindow(LocalDateTime start, LocalDateTime end) {
+        validateBookingWindow(start, end, settings());
+    }
+
+    public void validateLockedBookingWindow(LocalDateTime start, LocalDateTime end) {
+        validateBookingWindow(start, end, lockedSettings.get());
+    }
+
+    public void validateBookingWindow(LocalDateTime start, LocalDateTime end, RuleSettings settings) {
         if (start == null || end == null || !start.isBefore(end)) {
             throw new BizException("INVALID_TIME", "开始时间必须早于结束时间");
         }
         if (!start.toLocalDate().equals(end.toLocalDate())) {
             throw new BizException("CROSS_DAY", "会议不能跨天");
         }
-        if (!settings.getWorkdays().contains(start.getDayOfWeek().getValue())) {
+        if (!settings.workdays().contains(start.getDayOfWeek().getValue())) {
             throw new BizException("NON_WORKDAY", "所选日期不是开放预约的工作日");
         }
-        if (start.toLocalTime().isBefore(settings.getOpenTime()) || end.toLocalTime().isAfter(settings.getCloseTime())) {
-            throw new BizException("OUTSIDE_OPEN_HOURS", "预约时间须在 " + settings.getOpenTime() + "–" + settings.getCloseTime() + " 内");
+        if (start.toLocalTime().isBefore(settings.openTime()) || end.toLocalTime().isAfter(settings.closeTime())) {
+            throw new BizException("OUTSIDE_OPEN_HOURS", "预约时间须在 " + settings.openTime() + "–" + settings.closeTime() + " 内");
         }
         LocalDateTime now = now();
         if (!start.isAfter(now)) {

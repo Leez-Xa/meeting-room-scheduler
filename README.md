@@ -1,6 +1,6 @@
 # 企业会议室智能预约调度系统
 
-前后端分离的会议室预约系统，支持三角色账号、会议室排期、预约与审批、资源冲突校验、会议室推荐、站内消息和会前提醒。
+前后端分离的会议室预约系统，支持三角色账号、会议室排期、预约与审批、资源冲突校验、会议室推荐、站内消息、会前提醒和系统参数管理。
 
 - 后端：Java 21、Spring Boot 3.5、Spring Security、MyBatis-Plus。
 - 前端：Vue 3、TypeScript、Vite、Element Plus、FullCalendar。
@@ -56,7 +56,7 @@ npm run build
 
 ## MySQL 8 模式
 
-H2 用于快速演示。2026-10-13 已在 MySQL 8.4.9 上完成26项后端测试、员工提交/部门审批/员工取消的三角色页面流程、排期与消息检查，以及后端和数据库重启后的数据保留验证。周期预约、CSV报表和参数中心尚未实现。
+H2 用于快速演示。2026-10-13 已在 MySQL 8.4.9 上完成26项后端测试、员工提交/部门审批/员工取消的三角色页面流程、排期与消息检查，以及后端和数据库重启后的数据保留验证。2026-10-14 已实现系统参数中心，在 MySQL 独立库配置下完成43项测试（含3项旧库兼容单元测试）及三角色页面回归；参数保存后经后端重启仍保留。周期预约和CSV报表尚未实现。
 
 准备一个名为 `meeting_scheduler` 的全新数据库及可访问该数据库的专用账号。连接信息使用环境变量配置，不需要把真实密码写入源码。
 
@@ -76,6 +76,20 @@ java -jar target/meeting-room-scheduler-0.0.1-SNAPSHOT.jar --spring.profiles.act
 首次初始化使用 `src/main/resources/schema.sql` 建表，并生成上述演示账号。后续启动设置 `MEETING_DB_INIT_MODE=never`、`MEETING_DEMO_DATA=false`。其他操作系统设置同名环境变量即可。
 
 `application-mysql.yml.example` 中的 `change_me` 是占位值。正式使用请修改演示账号密码，并自行配置数据库连接和部署环境。
+
+## 系统参数与已有数据库升级
+
+系统管理员登录后，在“系统参数”页维护开放工作日、每日开放时间、推荐权重、楼层扣分、提醒提前量和草稿保留天数。默认权重为50%/30%/20%，提前15分钟提醒，草稿7天未改后清理；保存后即时生效，重启后保留。修改开放规则如影响已有有效预约，会阻止保存；其他管理员已经修改参数时，需要重新加载并核对。
+
+全新数据库由 `src/main/resources/schema.sql` 创建配置表。已有 MySQL 数据库应先执行增量升级脚本。在项目根目录使用已有 MySQL 客户端执行下列命令，交互输入数据库密码：
+
+```shell
+mysql --host=127.0.0.1 --user=meeting_app --password --database=meeting_scheduler --execute="source backend/src/main/resources/migrations/V20261014__system_config.sql"
+```
+
+该账号需具备建表和新增初始记录权限，权限不足时由数据库管理员执行，并为应用账号授予新表读写权限。脚本只新增配置表和初始行，重复执行不会覆盖已保存参数。已有库后续启动仍设置 `MEETING_DB_INIT_MODE=never`、`MEETING_DEMO_DATA=false`，不重复初始化演示数据。
+
+未执行升级时，原有预约流程继续使用应用初始规则，参数页显示升级提示并禁止保存；应用不会自动修改旧库表结构。参数接口为 `/api/v1/admin/settings` 的 GET/PUT，仅系统管理员可访问，写请求需要CSRF，版本号通过JSON字符串传输。
 
 ## 使用规则与接口
 

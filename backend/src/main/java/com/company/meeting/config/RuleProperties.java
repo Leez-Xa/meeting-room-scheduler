@@ -16,6 +16,7 @@ public class RuleProperties {
     private double floorWeight = 0.2;
     private int floorPenalty = 20;
     private int draftRetentionDays = 7;
+    private int reminderMinutes = 15;
     public Set<Integer> getWorkdays() { return workdays; }
     public void setWorkdays(Set<Integer> value) { workdays = value; }
     public LocalTime getOpenTime() { return openTime; }
@@ -32,9 +33,10 @@ public class RuleProperties {
     public void setFloorPenalty(int value) { floorPenalty = value; }
     public int getDraftRetentionDays() { return draftRetentionDays; }
     public void setDraftRetentionDays(int value) { draftRetentionDays = value; }
+    public int getReminderMinutes() { return reminderMinutes; }
+    public void setReminderMinutes(int value) { reminderMinutes = value; }
     @jakarta.annotation.PostConstruct
     public void validate() {
-        if (workdays.isEmpty() || workdays.stream().anyMatch(day->day<1 || day>7) || !openTime.isBefore(closeTime)) throw new IllegalArgumentException("预约工作日及开放时间配置不合法");
-        if (capacityWeight<0 || deviceWeight<0 || floorWeight<0 || !Double.isFinite(capacityWeight+deviceWeight+floorWeight) || Math.abs(capacityWeight+deviceWeight+floorWeight-1)>0.0001 || floorPenalty<0 || draftRetentionDays<1) throw new IllegalArgumentException("推荐权重须非负且合计为1，草稿保留天数须大于0");
+        RuleSettings.from(this);
     }
 }

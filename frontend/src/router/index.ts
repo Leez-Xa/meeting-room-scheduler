@@ -24,6 +24,7 @@ const router = createRouter({
       { path: 'approval', component: ApprovalView, meta: { title: '待审批会议' } },
       { path: 'audit', component: AuditView, meta: { title: '审计日志' } },
       { path: 'admin', component: AdminView, meta: { title: '基础数据' } },
+      { path: 'settings', component: () => import('../views/SettingsView.vue'), meta: { title: '系统参数' } },
       { path: 'account', component: AccountView, meta: { title: '账号设置' } },
       { path: 'notices', component: NoticesView, meta: { title: '消息中心' } },
     ] },
@@ -35,7 +36,7 @@ router.beforeEach(async (to) => {
   if (!auth.initialized) await auth.initialize()
   if (!auth.user && to.path !== '/login') return '/login'
   if (auth.user && to.path === '/login') return '/'
-  if (['/admin','/audit'].includes(to.path) && !auth.isAdmin) return '/'
+  if (['/admin','/audit','/settings'].includes(to.path) && !auth.isAdmin) return '/'
   if (to.path === '/approval' && !auth.canApprove) return '/'
 })
 export default router

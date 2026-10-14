@@ -65,6 +65,7 @@ public class MeetingService {
         List<Long> attendeeIds = normalizeAttendees(request.attendeeIds(), principal);
         Map<String, Integer> deviceRequirements = normalizeDevices(request.devices());
         RoomRepository.RoomRow room = rooms.lockRoom(request.roomId());
+        rules.validateLockedBookingWindow(request.startTime(), request.endTime());
         Long draftId = requestDraftForSubmit(request, principal);
         if (room == null || !room.active()) throw new BizException("ROOM_UNAVAILABLE", "会议室不存在或已停用");
         if (room.capacity() < attendeeIds.size()) throw new BizException("CAPACITY_NOT_ENOUGH", "会议室容量不足");
@@ -173,11 +174,12 @@ public class MeetingService {
     public List<MeetingDtos.Recommendation> recommend(Integer attendNum, Integer floorNo, LocalDateTime start, LocalDateTime end, Map<String, Integer> requirements) {
         if (attendNum == null || attendNum < 1 || floorNo == null) throw new BizException("INVALID_REQUEST", "参会人数和楼层不合法");
         if ((start == null) != (end == null)) throw new BizException("INVALID_TIME", "请同时提供开始和结束时间");
-        if (start != null) rules.validateBookingWindow(start, end);
+        var settings = rules.settings();
+        if (start != null) rules.validateBookingWindow(start, end, settings);
         Map<String, Integer> needed = normalizeDevices(requirements);
         return rooms.listRooms().stream().filter(RoomRepository.RoomRow::active).filter(room -> room.capacity() >= attendNum)
                 .filter(room -> devicesMatch(room, needed)).filter(room -> start == null || end == null || !rooms.hasRoomConflict(room.id(), start, end, null))
-                .map(room -> score(room, attendNum, floorNo, needed)).sorted(Comparator.comparing(MeetingDtos.Recommendation::totalScore).reversed().thenComparing(MeetingDtos.Recommendation::roomId)).toList();
+                .map(room -> score(room, attendNum, floorNo, needed, settings)).sorted(Comparator.comparing(MeetingDtos.Recommendation::totalScore).reversed().thenComparing(MeetingDtos.Recommendation::roomId)).toList();
     }
 
     public List<MeetingDtos.ScheduleEvent> schedule(LocalDateTime start, LocalDateTime end, UserPrincipal principal) {
@@ -201,9 +203,10 @@ public class MeetingService {
     public List<RoomRepository.RoomRow> rooms() { return rooms.listRooms(); }
     public List<UserRepository.UserSummary> users() { return users.listUsers(); }
     public Map<String,Object> bookingRules() {
-        return Map.of("zone","Asia/Shanghai","serverNow",rules.now(),"openTime",rules.settings().getOpenTime().toString(),
-            "closeTime",rules.settings().getCloseTime().toString(),"workdays",rules.settings().getWorkdays(),
-            "weights",Map.of("capacity",rules.settings().getCapacityWeight(),"device",rules.settings().getDeviceWeight(),"floor",rules.settings().getFloorWeight()));
+        var settings = rules.settings();
+        return Map.of("zone","Asia/Shanghai","serverNow",rules.now(),"openTime",settings.openTime().toString(),
+            "closeTime",settings.closeTime().toString(),"workdays",settings.workdays(),
+            "weights",Map.of("capacity",settings.capacityWeight(),"device",settings.deviceWeight(),"floor",settings.floorWeight()));
     }
     public List<MeetingRepository.AuditRow> audit(UserPrincipal principal) {
         if (!principal.role().equals("SYSTEM_ADMIN")) throw new BizException("FORBIDDEN", "只有系统管理员可以查看审计日志", org.springframework.http.HttpStatus.FORBIDDEN);
@@ -225,18 +228,18 @@ public class MeetingService {
             }
         }
         notices.sendUpcomingReminders(now);
-        meetings.cleanupStaleDrafts(now.minusDays(rules.settings().getDraftRetentionDays()));
+        meetings.cleanupStaleDrafts(now.minusDays(rules.settings().draftRetentionDays()));
     }
 
-    private MeetingDtos.Recommendation score(RoomRepository.RoomRow room, Integer attendNum, Integer floorNo, Map<String, Integer> needed) {
+    private MeetingDtos.Recommendation score(RoomRepository.RoomRow room, Integer attendNum, Integer floorNo, Map<String, Integer> needed, com.company.meeting.config.RuleSettings settings) {
         double capacityScore = Math.max(0, 100 - ((room.capacity() - attendNum) * 100.0 / Math.max(1, room.capacity())));
         Map<String,Integer> inventory=rooms.deviceInventory(room.id());
         int required=needed.values().stream().mapToInt(Integer::intValue).sum();
         int available=needed.keySet().stream().mapToInt(type->inventory.getOrDefault(type,0)).sum();
         double deviceScore = required==0 ? 100 : required * 100.0 / Math.max(required,available);
         int distance = Math.abs(room.floorNo() - floorNo);
-        double floorScore = Math.max(0, 100 - distance * rules.settings().getFloorPenalty());
-        double total = capacityScore * rules.settings().getCapacityWeight() + deviceScore * rules.settings().getDeviceWeight() + floorScore * rules.settings().getFloorWeight();
+        double floorScore = Math.max(0, 100 - distance * settings.floorPenalty());
+        double total = capacityScore * settings.capacityWeight() + deviceScore * settings.deviceWeight() + floorScore * settings.floorWeight();
         return new MeetingDtos.Recommendation(room.id(), room.roomName(), room.floorNo(), room.capacity(), distance,
                 round(capacityScore), round(deviceScore), round(floorScore), round(total), "容量匹配 " + round(capacityScore) + " 分，设备匹配 " + round(deviceScore) + " 分，距离相差 " + distance + " 层");
     }
