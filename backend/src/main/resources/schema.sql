@@ -59,10 +59,35 @@ CREATE TABLE IF NOT EXISTS device (
     CONSTRAINT fk_device_room FOREIGN KEY (room_id) REFERENCES meeting_room(id)
 );
 
+CREATE TABLE IF NOT EXISTS meeting_series (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    dept_id BIGINT NOT NULL,
+    room_id BIGINT NOT NULL,
+    subject VARCHAR(200) NOT NULL,
+    attend_num INT NOT NULL,
+    first_start_time DATETIME NOT NULL,
+    first_end_time DATETIME NOT NULL,
+    occurrence_count INT NOT NULL,
+    create_by BIGINT NOT NULL,
+    update_by BIGINT NOT NULL,
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_series_user FOREIGN KEY (user_id) REFERENCES sys_user(id),
+    CONSTRAINT fk_series_dept FOREIGN KEY (dept_id) REFERENCES dept(id),
+    CONSTRAINT fk_series_room FOREIGN KEY (room_id) REFERENCES meeting_room(id),
+    CONSTRAINT ck_series_count CHECK (occurrence_count BETWEEN 2 AND 12),
+    INDEX idx_series_user (user_id, create_time, deleted)
+);
+
 CREATE TABLE IF NOT EXISTS meeting_book (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,
     dept_id BIGINT NOT NULL,
+    series_id BIGINT NULL,
+    series_index INT NULL,
+    series_total INT NULL,
     applicant_role VARCHAR(30) NOT NULL DEFAULT 'EMPLOYEE',
     room_id BIGINT NULL,
     subject VARCHAR(200) NOT NULL,
@@ -81,11 +106,13 @@ CREATE TABLE IF NOT EXISTS meeting_book (
     deleted TINYINT NOT NULL DEFAULT 0,
     CONSTRAINT fk_book_user FOREIGN KEY (user_id) REFERENCES sys_user(id),
     CONSTRAINT fk_book_dept FOREIGN KEY (dept_id) REFERENCES dept(id),
+    CONSTRAINT fk_book_series FOREIGN KEY (series_id) REFERENCES meeting_series(id),
     CONSTRAINT fk_book_room FOREIGN KEY (room_id) REFERENCES meeting_room(id),
     CONSTRAINT fk_book_auditor FOREIGN KEY (audit_user) REFERENCES sys_user(id),
     CONSTRAINT ck_book_status CHECK (status IN ('DRAFT','PENDING','APPROVED','IN_PROGRESS','COMPLETED','CANCELED','REJECTED','EXPIRED')),
     INDEX idx_book_room_time (room_id, start_time, end_time, status, deleted),
-    INDEX idx_book_user_time (user_id, start_time, end_time, status, deleted)
+    INDEX idx_book_user_time (user_id, start_time, end_time, status, deleted),
+    INDEX idx_book_series (series_id, series_index, status, deleted)
 );
 
 CREATE TABLE IF NOT EXISTS meeting_attendee (

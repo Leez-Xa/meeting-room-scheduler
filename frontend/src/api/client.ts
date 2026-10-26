@@ -26,4 +26,21 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   return json.data
 }
 
+export async function download(path: string, filename: string) {
+  const response = await fetch(`/api/v1${path}`, { credentials: 'include' })
+  if (!response.ok) {
+    const json = await response.json().catch(() => ({ message: response.status === 403 ? '没有导出权限' : '下载失败' }))
+    throw new Error(json.message || '下载失败')
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 export function showError(error: unknown) { ElMessage.error(error instanceof Error ? error.message : '操作失败') }

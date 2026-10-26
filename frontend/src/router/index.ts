@@ -11,6 +11,7 @@ import AuditView from '../views/AuditView.vue'
 import AdminView from '../views/AdminView.vue'
 import AccountView from '../views/AccountView.vue'
 import NoticesView from '../views/NoticesView.vue'
+import ReportsView from '../views/ReportsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -27,6 +28,7 @@ const router = createRouter({
       { path: 'settings', component: () => import('../views/SettingsView.vue'), meta: { title: '系统参数' } },
       { path: 'account', component: AccountView, meta: { title: '账号设置' } },
       { path: 'notices', component: NoticesView, meta: { title: '消息中心' } },
+      { path: 'reports', component: ReportsView, meta: { title: '会议报表' } },
     ] },
   ],
 })
@@ -38,5 +40,6 @@ router.beforeEach(async (to) => {
   if (auth.user && to.path === '/login') return '/'
   if (['/admin','/audit','/settings'].includes(to.path) && !auth.isAdmin) return '/'
   if (to.path === '/approval' && !auth.canApprove) return '/'
+  if (to.path === '/reports' && !auth.canApprove) return '/'
 })
 export default router

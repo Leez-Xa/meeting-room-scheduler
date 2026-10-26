@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.Map;
+import java.util.LinkedHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -19,7 +20,9 @@ public class GlobalExceptionHandler {
     private static final Logger log=LoggerFactory.getLogger(GlobalExceptionHandler.class);
     @ExceptionHandler(BizException.class)
     public ResponseEntity<ApiResponse<Object>> handleBiz(BizException ex) {
-        return ResponseEntity.status(ex.status()).body(new ApiResponse<>(false, Map.of("code", ex.code()), ex.getMessage()));
+        Map<String,Object> data = new LinkedHashMap<>(); data.put("code", ex.code());
+        if (ex.details() != null) data.put("details", ex.details());
+        return ResponseEntity.status(ex.status()).body(new ApiResponse<>(false, data, ex.getMessage()));
     }
 
     @ExceptionHandler(BadCredentialsException.class)

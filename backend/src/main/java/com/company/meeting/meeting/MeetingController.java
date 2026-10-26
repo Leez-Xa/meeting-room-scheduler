@@ -46,6 +46,12 @@ public class MeetingController {
         return ApiResponse.ok(service.submit(request, user), "预约已提交，等待审批");
     }
 
+    @PostMapping("/meetings/series/submit")
+    public ApiResponse<MeetingDtos.RecurringSubmissionResult> submitRecurring(@Valid @RequestBody MeetingDtos.RecurringSubmitRequest request,
+                                                                                @AuthenticationPrincipal UserPrincipal user) {
+        return ApiResponse.ok(service.submitRecurring(request, user), "周期预约已提交，等待审批");
+    }
+
     @GetMapping("/meetings/recommendations")
     public ApiResponse<List<MeetingDtos.Recommendation>> recommend(@RequestParam Integer attendNum, @RequestParam Integer floorNo,
                                                                     @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
@@ -63,9 +69,23 @@ public class MeetingController {
         return ApiResponse.ok(service.approve(id, request, user), request.approved() ? "审批通过" : "已拒绝");
     }
 
+    @PostMapping("/meetings/series/{seriesId}/approval")
+    public ApiResponse<MeetingDtos.SeriesActionResult> approveSeries(@PathVariable Long seriesId,
+                                                                       @Valid @RequestBody MeetingDtos.ApprovalRequest request,
+                                                                       @AuthenticationPrincipal UserPrincipal user) {
+        return ApiResponse.ok(service.approveSeries(seriesId, request, user), request.approved() ? "周期预约审批通过" : "周期预约已拒绝");
+    }
+
     @PostMapping("/meetings/{id}/cancel")
     public ApiResponse<MeetingRepository.MeetingRow> cancel(@PathVariable Long id, @Valid @RequestBody(required = false) MeetingDtos.CancelRequest request, @AuthenticationPrincipal UserPrincipal user) {
         return ApiResponse.ok(service.cancel(id, request == null ? new MeetingDtos.CancelRequest(null) : request, user), "会议已取消");
+    }
+
+    @PostMapping("/meetings/series/{seriesId}/cancel")
+    public ApiResponse<MeetingDtos.SeriesActionResult> cancelSeries(@PathVariable Long seriesId,
+                                                                     @Valid @RequestBody MeetingDtos.SeriesCancelRequest request,
+                                                                     @AuthenticationPrincipal UserPrincipal user) {
+        return ApiResponse.ok(service.cancelSeries(seriesId, request, user), "周期预约已处理");
     }
 
     @GetMapping("/schedule")

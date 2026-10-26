@@ -7,7 +7,7 @@ import { api, showError } from '../api/client'
 import BookingTimePicker from '../components/BookingTimePicker.vue'
 import { bookingTimeError, serverTimeAfter } from '../utils/bookingTime'
 import { useAuthStore } from '../stores/auth'
-import type { Meeting, Recommendation, Room, User, BookingRules } from '../types'
+import type { Meeting, Recommendation, Room, User, BookingRules, RecurringSubmissionResult } from '../types'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
@@ -21,11 +21,11 @@ let rulesReceivedAt = performance.now()
 const currentServerTime = () => serverTimeAfter(rules.value!.serverNow, performance.now() - rulesReceivedAt)
 const timeError = () => rules.value ? bookingTimeError(form.startTime, form.endTime, rules.value, currentServerTime()) : '正在获取预约规则，请稍后再试'
 let recommendTimer: ReturnType<typeof setTimeout> | undefined
-const form = reactive({ id: null as string|null, subject: '', startTime: '', endTime: '', roomId: '', attendeeIds: [] as string[], devices: { PROJECTOR: 0, MIC: 0, VIDEO: 0, DISPLAY: 0 } })
+const form = reactive({ id: null as string|null, subject: '', startTime: '', endTime: '', roomId: '', attendeeIds: [] as string[], recurring: false, occurrenceCount: 2, devices: { PROJECTOR: 0, MIC: 0, VIDEO: 0, DISPLAY: 0 } })
 const attendeeCount = computed(() => new Set([auth.user?.id, ...form.attendeeIds]).size)
 const selectedRoom = computed(() => rooms.value.find(r => r.id === form.roomId))
 const deviceLabels: Record<string,string> = { PROJECTOR: '投影仪', MIC: '麦克风', VIDEO: '视频会议设备', DISPLAY: '显示器' }
-const payload = () => ({ ...form, roomId:form.roomId || null, attendNum: attendeeCount.value, devices: Object.fromEntries(Object.entries(form.devices).filter(([,quantity]) => quantity > 0)) })
+const payload = () => ({ id: form.id, subject: form.subject, startTime: form.startTime, endTime: form.endTime, roomId: form.roomId || null, attendeeIds: form.attendeeIds, attendNum: attendeeCount.value, devices: Object.fromEntries(Object.entries(form.devices).filter(([,quantity]) => quantity > 0)) })
 async function recommend() {
   if (timeError()) { recommendations.value = []; return }
   loadingRecommendations.value = true
@@ -37,7 +37,14 @@ async function save(submit: boolean) {
   if (submit && !form.roomId) { ElMessage.warning('请选择会议室'); return }
   busy.value = true
   try {
-    if (submit) { const result = await api<{meeting: Meeting; warnings: string[]}>('/meetings/submit', { method: 'POST', body: JSON.stringify(payload()) }); ElMessage.success('预约已提交，等待审批'); result.warnings.forEach(warning => ElMessage.warning({ message: warning, duration: 7000 })); router.push('/meetings') }
+    if (submit) {
+      const result = form.recurring
+        ? await api<RecurringSubmissionResult>('/meetings/series/submit', { method: 'POST', body: JSON.stringify({ ...payload(), occurrenceCount: form.occurrenceCount }) })
+        : await api<{meeting: Meeting; warnings: string[]}>('/meetings/submit', { method: 'POST', body: JSON.stringify(payload()) })
+      ElMessage.success(form.recurring ? `周期预约已提交，共 ${form.occurrenceCount} 场，等待审批` : '预约已提交，等待审批')
+      result.warnings.forEach(warning => ElMessage.warning({ message: warning, duration: 7000 }))
+      router.push('/meetings')
+    }
     else { const draft = await api<Meeting>('/meetings/drafts', { method: 'POST', body: JSON.stringify(payload()) }); form.id = draft.id; ElMessage.success('草稿已保存') }
   } catch (e) { showError(e) } finally { busy.value = false }
 }
@@ -58,8 +65,10 @@ watch(()=>[form.startTime,form.endTime,form.attendeeIds.join(','),JSON.stringify
 onUnmounted(()=>clearTimeout(recommendTimer))
 </script>
 <template><section>
-<div class="page-heading"><div><h1>{{ form.id ? '编辑预约草稿' : '发起预约' }}</h1><p class="muted">单次会议申请 · 北京时间 · {{ rules?.openTime || '09:00' }}–{{ rules?.closeTime || '18:00' }}</p></div><el-button @click="router.push('/meetings')">返回会议列表</el-button></div>
+<div class="page-heading"><div><h1>{{ form.id ? '编辑预约草稿' : '发起预约' }}</h1><p class="muted">{{ form.recurring ? '每周周期预约' : '单次会议申请' }} · 北京时间 · {{ rules?.openTime || '09:00' }}–{{ rules?.closeTime || '18:00' }}</p></div><el-button @click="router.push('/meetings')">返回会议列表</el-button></div>
 <div class="booking-layout"><div class="booking-form"><h2><span class="step-number">01</span>会议安排</h2><el-form label-position="top">
+<el-form-item label="预约方式"><el-radio-group v-model="form.recurring" :disabled="!!form.id"><el-radio-button :value="false">单次预约</el-radio-button><el-radio-button :value="true">每周预约</el-radio-button></el-radio-group><div class="field-note">首场必须在当前开放周，后续场次按周重复</div></el-form-item>
+<el-form-item v-if="form.recurring" label="重复次数" required><el-input-number v-model="form.occurrenceCount" :min="2" :max="12" /></el-form-item>
 <el-form-item label="会议主题" required><el-input v-model="form.subject" maxlength="200" show-word-limit placeholder="会议主题" /></el-form-item>
 <BookingTimePicker v-model:start-time="form.startTime" v-model:end-time="form.endTime" :rules="rules" />
 <el-form-item :label="`参会人 · ${attendeeCount} 人`"><el-select v-model="form.attendeeIds" multiple filterable placeholder="选择内部员工" style="width:100%"><el-option v-for="user in users" :key="user.id" :value="user.id" :label="`${user.realName} · ${user.deptName}`" :disabled="user.id === auth.user?.id" /></el-select><div class="field-note">申请人：{{ auth.user?.realName }}</div></el-form-item>

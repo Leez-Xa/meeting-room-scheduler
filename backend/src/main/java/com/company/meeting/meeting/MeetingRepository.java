@@ -23,7 +23,8 @@ public class MeetingRepository {
         return jdbc.query("""
                 SELECT b.id, b.user_id, u.real_name applicant_name, b.dept_id, d.dept_name,
                        b.room_id, r.room_name, r.floor_no, b.subject, b.attend_num, b.start_time,
-                       b.end_time, b.status, b.audit_user, b.audit_time, b.audit_comment, b.cancel_reason, b.applicant_role
+                       b.end_time, b.status, b.audit_user, b.audit_time, b.audit_comment, b.cancel_reason, b.applicant_role,
+                       b.series_id, b.series_index, b.series_total
                 FROM meeting_book b JOIN sys_user u ON u.id = b.user_id JOIN dept d ON d.id = b.dept_id
                 LEFT JOIN meeting_room r ON r.id = b.room_id WHERE b.id = ? AND b.deleted = 0
                 """, this::mapRows, id).stream().findFirst().orElse(null);
@@ -45,7 +46,8 @@ public class MeetingRepository {
         StringBuilder sql = new StringBuilder("""
                 SELECT b.id, b.user_id, u.real_name applicant_name, b.dept_id, d.dept_name,
                        b.room_id, r.room_name, r.floor_no, b.subject, b.attend_num, b.start_time,
-                       b.end_time, b.status, b.audit_user, b.audit_time, b.audit_comment, b.cancel_reason, b.applicant_role
+                       b.end_time, b.status, b.audit_user, b.audit_time, b.audit_comment, b.cancel_reason, b.applicant_role,
+                       b.series_id, b.series_index, b.series_total
                 FROM meeting_book b JOIN sys_user u ON u.id = b.user_id JOIN dept d ON d.id = b.dept_id
                 LEFT JOIN meeting_room r ON r.id = b.room_id
                 WHERE b.deleted = 0
@@ -100,7 +102,8 @@ public class MeetingRepository {
                     rs.getObject("room_id", Long.class), rs.getString("room_name"), rs.getObject("floor_no", Integer.class),
                     rs.getString("subject"), rs.getInt("attend_num"), rs.getObject("start_time", LocalDateTime.class), rs.getObject("end_time", LocalDateTime.class),
                     rs.getString("status"), rs.getObject("audit_user", Long.class), rs.getObject("audit_time", LocalDateTime.class),
-                    rs.getString("audit_comment"), rs.getString("cancel_reason"), listAttendees(id), listDevices(id), rs.getString("applicant_role")));
+                    rs.getString("audit_comment"), rs.getString("cancel_reason"), listAttendees(id), listDevices(id), rs.getString("applicant_role"),
+                    rs.getObject("series_id", Long.class), rs.getObject("series_index", Integer.class), rs.getObject("series_total", Integer.class)));
         }
         return rows;
     }
@@ -116,6 +119,53 @@ public class MeetingRepository {
             ps.setObject(5, start); ps.setObject(6, end); ps.setLong(7, userId); ps.setLong(8, userId); return ps;
         }, keyHolder);
         return keyHolder.getKey().longValue();
+    }
+
+    public Long insertSeries(Long userId, Long deptId, Long roomId, String subject, Integer attendNum,
+                             LocalDateTime firstStart, LocalDateTime firstEnd, Integer occurrenceCount) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement("""
+                    INSERT INTO meeting_series(user_id,dept_id,room_id,subject,attend_num,first_start_time,first_end_time,occurrence_count,create_by,update_by)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """, new String[]{"id"});
+            ps.setLong(1, userId); ps.setLong(2, deptId); ps.setLong(3, roomId); ps.setString(4, subject);
+            ps.setInt(5, attendNum); ps.setObject(6, firstStart); ps.setObject(7, firstEnd); ps.setInt(8, occurrenceCount);
+            ps.setLong(9, userId); ps.setLong(10, userId); return ps;
+        }, keyHolder);
+        return keyHolder.getKey().longValue();
+    }
+
+    public Long insertSeriesOccurrence(Long seriesId, int index, int total, Long userId, Long deptId, Long roomId,
+                                       String subject, int attendNum, LocalDateTime start, LocalDateTime end, String applicantRole) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement("""
+                    INSERT INTO meeting_book(user_id,dept_id,series_id,series_index,series_total,applicant_role,room_id,subject,attend_num,start_time,end_time,status,create_by,update_by)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,'PENDING',?,?)
+                    """, new String[]{"id"});
+            ps.setLong(1, userId); ps.setLong(2, deptId); ps.setLong(3, seriesId); ps.setInt(4, index); ps.setInt(5, total);
+            ps.setString(6, applicantRole); ps.setLong(7, roomId); ps.setString(8, subject); ps.setInt(9, attendNum);
+            ps.setObject(10, start); ps.setObject(11, end); ps.setLong(12, userId); ps.setLong(13, userId); return ps;
+        }, keyHolder);
+        return keyHolder.getKey().longValue();
+    }
+
+    public List<MeetingRow> findSeries(Long seriesId) {
+        return jdbc.query("""
+                SELECT b.id, b.user_id, u.real_name applicant_name, b.dept_id, d.dept_name,
+                       b.room_id, r.room_name, r.floor_no, b.subject, b.attend_num, b.start_time,
+                       b.end_time, b.status, b.audit_user, b.audit_time, b.audit_comment, b.cancel_reason, b.applicant_role,
+                       b.series_id, b.series_index, b.series_total
+                FROM meeting_book b JOIN sys_user u ON u.id=b.user_id JOIN dept d ON d.id=b.dept_id
+                LEFT JOIN meeting_room r ON r.id=b.room_id
+                WHERE b.series_id=? AND b.deleted=0 ORDER BY b.series_index,b.id
+                """, this::mapRows, seriesId);
+    }
+
+    public void lockSeries(Long seriesId) {
+        jdbc.query("SELECT id FROM meeting_book WHERE series_id=? AND deleted=0 ORDER BY id FOR UPDATE",
+                (rs, n) -> rs.getLong(1), seriesId);
     }
 
     public void updateDraft(Long id, Long userId, String subject, Integer attendNum, LocalDateTime start, LocalDateTime end, Long roomId) {
@@ -169,8 +219,22 @@ public class MeetingRepository {
         return jdbc.update("UPDATE meeting_book SET status=?, audit_user=?, audit_time=CURRENT_TIMESTAMP, audit_comment=?, update_by=?, update_time=CURRENT_TIMESTAMP WHERE id=? AND status='PENDING' AND deleted=0", status, operatorId, comment, operatorId, id);
     }
 
+    public int updateSeriesApproval(Long seriesId, String status, Long operatorId, String comment) {
+        return jdbc.update("""
+                UPDATE meeting_book SET status=?, audit_user=?, audit_time=CURRENT_TIMESTAMP, audit_comment=?, update_by=?, update_time=CURRENT_TIMESTAMP
+                WHERE series_id=? AND status='PENDING' AND deleted=0
+                """, status, operatorId, comment, operatorId, seriesId);
+    }
+
     public int cancel(Long id, Long operatorId, String reason) {
         return jdbc.update("UPDATE meeting_book SET status='CANCELED', cancel_reason=?, update_by=?, update_time=CURRENT_TIMESTAMP WHERE id=? AND status IN ('PENDING','APPROVED','IN_PROGRESS') AND deleted=0", reason, operatorId, id);
+    }
+
+    public int cancelSeries(Long seriesId, Long operatorId, String reason, LocalDateTime now) {
+        return jdbc.update("""
+                UPDATE meeting_book SET status='CANCELED', cancel_reason=?, update_by=?, update_time=CURRENT_TIMESTAMP
+                WHERE series_id=? AND status IN ('PENDING','APPROVED') AND start_time>? AND deleted=0
+                """, reason, operatorId, seriesId, now);
     }
 
     public void addApprovalHistory(Long bookId, Long operatorId, String action, String comment) {
@@ -237,7 +301,8 @@ public class MeetingRepository {
 
     public record MeetingRow(Long id, Long userId, String applicantName, Long deptId, String deptName, Long roomId, String roomName, Integer floorNo,
                              String subject, Integer attendNum, LocalDateTime startTime, LocalDateTime endTime, String status, Long auditUser,
-                             LocalDateTime auditTime, String auditComment, String cancelReason, List<AttendeeRow> attendees, List<DeviceRequirement> devices, String applicantRole) {}
+                             LocalDateTime auditTime, String auditComment, String cancelReason, List<AttendeeRow> attendees, List<DeviceRequirement> devices,
+                             String applicantRole, Long seriesId, Integer seriesIndex, Integer seriesTotal) {}
     public record AttendeeRow(Long userId, String realName, String username, String deptName) {}
     public record DeviceRequirement(String deviceType, Integer quantity) {}
     public record AuditRow(Long id, Long operatorId, String operatorName, String operateType, String content, LocalDateTime operateTime) {}

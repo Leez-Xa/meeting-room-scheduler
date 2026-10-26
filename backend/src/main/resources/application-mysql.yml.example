@@ -4,3 +4,4 @@ spring:
     username: meeting_app
     password: change_me
     driver-class-name: com.mysql.cj.jdbc.Driver
+

@@ -50,10 +50,22 @@ public final class BusinessRules {
     }
 
     public void validateLockedBookingWindow(LocalDateTime start, LocalDateTime end) {
-        validateBookingWindow(start, end, lockedSettings.get());
+        validateBookingWindow(start, end, lockedSettings.get(), true);
+    }
+
+    public void validateLockedRecurringFirstWindow(LocalDateTime start, LocalDateTime end) {
+        validateBookingWindow(start, end, lockedSettings.get(), true);
+    }
+
+    public void validateLockedRecurringOccurrence(LocalDateTime start, LocalDateTime end) {
+        validateBookingWindow(start, end, lockedSettings.get(), false);
     }
 
     public void validateBookingWindow(LocalDateTime start, LocalDateTime end, RuleSettings settings) {
+        validateBookingWindow(start, end, settings, true);
+    }
+
+    private void validateBookingWindow(LocalDateTime start, LocalDateTime end, RuleSettings settings, boolean enforceOpenWeek) {
         if (start == null || end == null || !start.isBefore(end)) {
             throw new BizException("INVALID_TIME", "开始时间必须早于结束时间");
         }
@@ -70,6 +82,7 @@ public final class BusinessRules {
         if (!start.isAfter(now)) {
             throw new BizException("PAST_TIME", "不能预约已经开始的时间");
         }
+        if (!enforceOpenWeek) return;
         DayOfWeek day = now.getDayOfWeek();
         LocalDate monday = now.toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         // 周末开放下周；默认工作日限制会同时过滤本周周六、周日。

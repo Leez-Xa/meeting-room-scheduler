@@ -20,7 +20,24 @@ const total=ref(0)
 const filtered = computed(() => meetings.value)
 async function load() { loading.value = true; try { const result=await api<Page<Meeting>>(`/meetings?scope=${scope.value}&page=${page.value}&pageSize=20${status.value==='ALL'?'':`&status=${status.value}`}`); meetings.value=result.records; total.value=Number(result.total) } catch (e) { showError(e) } finally { loading.value = false } }
 function changeFilter() { page.value=1; load() }
+async function cancelSeries(meeting: Meeting) {
+  if (!meeting.seriesId) return
+  let scope: 'ALL' | 'ONE' = 'ALL'
+  try {
+    await ElMessageBox.confirm(`“${meeting.subject}”是周期预约。确认取消全部未开始场次吗？`, '取消周期预约', { confirmButtonText: '取消全部未开始场次', cancelButtonText: '仅取消本场' })
+  } catch (error) {
+    if (error === 'cancel') scope = 'ONE'
+    else return
+  }
+  try {
+    await api(`/meetings/series/${meeting.seriesId}/cancel`, { method: 'POST', body: JSON.stringify({ scope, meetingId: scope === 'ONE' ? meeting.id : null, reason: '申请人取消周期预约' }) })
+    ElMessage.success(scope === 'ALL' ? '已取消全部未开始场次' : '已取消本场')
+    await load()
+  } catch (e) { showError(e) }
+}
+
 async function cancel(meeting: Meeting) {
+  if (meeting.seriesId && meeting.userId === auth.user?.id && meeting.status !== 'IN_PROGRESS') { await cancelSeries(meeting); return }
   try {
     let reason='申请人主动取消'
     if (meeting.userId!==auth.user?.id || meeting.status==='IN_PROGRESS') {
@@ -38,6 +55,7 @@ onMounted(load)
       <el-table-column prop="subject" label="会议主题" min-width="200" />
       <el-table-column prop="roomName" label="会议室" min-width="120" />
       <el-table-column label="时间" min-width="210"><template #default="{row}">{{ row.startTime.replace('T', ' ').slice(0, 16) }} - {{ row.endTime.slice(11,16) }}</template></el-table-column>
+      <el-table-column label="周期" width="100"><template #default="{row}">{{ row.seriesId ? `${row.seriesIndex}/${row.seriesTotal} 场` : '单次' }}</template></el-table-column>
       <el-table-column label="状态" width="130"><template #default="{row}"><StatusTag :status="row.status" /></template></el-table-column>
       <el-table-column label="操作" min-width="180"><template #default="{row}">
         <el-button text @click="detail=row">详情</el-button>

@@ -1,6 +1,7 @@
 package com.company.meeting.meeting;
 
 import com.company.meeting.auth.UserPrincipal;
+import com.company.meeting.auth.DepartmentScopePolicy;
 import com.company.meeting.common.BizException;
 import com.company.meeting.common.BusinessRules;
 import com.company.meeting.resource.RoomRepository;
@@ -93,6 +94,65 @@ public class MeetingService {
         return new MeetingDtos.SubmissionResult(submitted, warnings);
     }
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public MeetingDtos.RecurringSubmissionResult submitRecurring(MeetingDtos.RecurringSubmitRequest request, UserPrincipal principal) {
+        validateBasic(request.subject(), request.attendNum(), request.startTime(), request.endTime());
+        if (request.occurrenceCount() == null || request.occurrenceCount() < 2 || request.occurrenceCount() > 12) {
+            throw new BizException("INVALID_OCCURRENCE_COUNT", "周期次数必须为2到12次");
+        }
+        List<Long> attendeeIds = normalizeAttendees(request.attendeeIds(), principal);
+        Map<String, Integer> deviceRequirements = normalizeDevices(request.devices());
+        RoomRepository.RoomRow room = rooms.lockRoom(request.roomId());
+        if (room == null || !room.active()) throw new BizException("ROOM_UNAVAILABLE", "会议室不存在或已停用");
+        rules.validateLockedRecurringFirstWindow(request.startTime(), request.endTime());
+        for (int index = 1; index < request.occurrenceCount(); index++) {
+            rules.validateLockedRecurringOccurrence(request.startTime().plusWeeks(index), request.endTime().plusWeeks(index));
+        }
+        if (room.capacity() < attendeeIds.size()) throw new BizException("CAPACITY_NOT_ENOUGH", "会议室容量不足");
+        Map<String, Integer> inventory = rooms.deviceInventory(room.id());
+        for (var entry : deviceRequirements.entrySet()) {
+            if (inventory.getOrDefault(entry.getKey(), 0) < entry.getValue()) {
+                throw new BizException("DEVICE_NOT_ENOUGH", "会议室缺少设备：" + entry.getKey());
+            }
+        }
+        List<String> conflicts = new ArrayList<>();
+        for (int index = 0; index < request.occurrenceCount(); index++) {
+            LocalDateTime start = request.startTime().plusWeeks(index);
+            LocalDateTime end = request.endTime().plusWeeks(index);
+            if (rooms.hasRoomConflict(room.id(), start, end, null)) conflicts.add(start.toLocalDate().toString());
+        }
+        if (!conflicts.isEmpty()) {
+            throw new BizException("RECURRING_CONFLICT", "周期预约存在会议室冲突：" + String.join("、", conflicts),
+                    org.springframework.http.HttpStatus.CONFLICT, Map.of("conflictDates", conflicts));
+        }
+        Long seriesId = meetings.insertSeries(principal.id(), principal.deptId(), room.id(), request.subject(), attendeeIds.size(),
+                request.startTime(), request.endTime(), request.occurrenceCount());
+        List<MeetingRepository.MeetingRow> created = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        List<RoomRepository.DeviceRow> actualDevices = room.devices().stream().filter(RoomRepository.DeviceRow::active).toList();
+        for (int index = 0; index < request.occurrenceCount(); index++) {
+            LocalDateTime start = request.startTime().plusWeeks(index);
+            LocalDateTime end = request.endTime().plusWeeks(index);
+            Long bookId = meetings.insertSeriesOccurrence(seriesId, index + 1, request.occurrenceCount(), principal.id(), principal.deptId(), room.id(),
+                    request.subject(), attendeeIds.size(), start, end, principal.role());
+            meetings.replaceAttendees(bookId, attendeeIds);
+            meetings.replaceDevices(bookId, deviceRequirements);
+            meetings.bindDevices(bookId, actualDevices, principal.id());
+            for (Long attendeeId : attendeeIds) {
+                if (rooms.hasUserConflict(attendeeId, start, end, bookId)) {
+                    String name = users.listUsers().stream().filter(user -> user.id().equals(attendeeId)).findFirst()
+                            .map(UserRepository.UserSummary::realName).orElse("参会人");
+                    warnings.add(start.toLocalDate() + "：" + name + "在该时段已有会议");
+                }
+            }
+            MeetingRepository.MeetingRow createdMeeting = meetings.findById(bookId);
+            meetings.addAudit(principal.id(), "MEETING_SERIES_SUBMIT", "提交周期预约第" + (index + 1) + "场：" + request.subject());
+            notices.notifySubmitted(createdMeeting);
+            created.add(createdMeeting);
+        }
+        return new MeetingDtos.RecurringSubmissionResult(seriesId, created, warnings);
+    }
+
     private Long requestDraftForSubmit(MeetingDtos.SubmitRequest request, UserPrincipal principal) {
         if (request.id() != null) {
             ownDraft(request.id(), principal);
@@ -151,6 +211,35 @@ public class MeetingService {
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    public MeetingDtos.SeriesActionResult approveSeries(Long seriesId, MeetingDtos.ApprovalRequest request, UserPrincipal principal) {
+        List<MeetingRepository.MeetingRow> series = meetings.findSeries(seriesId);
+        if (series.isEmpty()) throw new BizException("NOT_FOUND", "周期预约不存在");
+        for (MeetingRepository.MeetingRow meeting : series) {
+            if (meeting.userId().equals(principal.id())) throw new BizException("SELF_APPROVAL", "禁止审批自己的申请", org.springframework.http.HttpStatus.FORBIDDEN);
+            if (!canApprove(meeting, principal)) throw new BizException("FORBIDDEN", "没有权限审批该周期预约", org.springframework.http.HttpStatus.FORBIDDEN);
+        }
+        RoomRepository.RoomRow room = rooms.lockRoom(series.get(0).roomId());
+        meetings.lockSeries(seriesId);
+        series = meetings.findSeries(seriesId);
+        if (series.stream().anyMatch(meeting -> !"PENDING".equals(meeting.status()))) throw new BizException("INVALID_STATUS", "周期预约中存在不可审批的场次");
+        if (series.stream().anyMatch(meeting -> !meeting.startTime().isAfter(rules.now()))) throw new BizException("ALREADY_STARTED", "周期预约中存在已开始场次");
+        if (request.approved() && (room == null || !room.active())) throw new BizException("ROOM_UNAVAILABLE", "会议室不存在或已停用");
+        if (request.approved()) {
+            List<String> conflicts = series.stream().filter(meeting -> rooms.hasRoomConflictExceptSeries(room.id(), meeting.startTime(), meeting.endTime(), seriesId))
+                    .map(meeting -> meeting.startTime().toLocalDate().toString()).toList();
+            if (!conflicts.isEmpty()) throw new BizException("RECURRING_CONFLICT", "审批时发现会议室冲突：" + String.join("、", conflicts), org.springframework.http.HttpStatus.CONFLICT, Map.of("conflictDates", conflicts));
+        }
+        String status = request.approved() ? "APPROVED" : "REJECTED";
+        meetings.updateSeriesApproval(seriesId, status, principal.id(), request.comment());
+        for (MeetingRepository.MeetingRow meeting : series) {
+            meetings.addApprovalHistory(meeting.id(), principal.id(), request.approved() ? "APPROVE" : "REJECT", request.comment());
+            meetings.addAudit(principal.id(), request.approved() ? "MEETING_SERIES_APPROVE" : "MEETING_SERIES_REJECT", (request.approved() ? "周期预约审批通过：" : "周期预约拒绝：") + meeting.subject());
+            notices.notifyApproval(meetings.findById(meeting.id()), request.approved(), request.comment());
+        }
+        return new MeetingDtos.SeriesActionResult(seriesId, meetings.findSeries(seriesId));
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public MeetingRepository.MeetingRow cancel(Long id, MeetingDtos.CancelRequest request, UserPrincipal principal) {
         MeetingRepository.MeetingRow meeting = meetings.findById(id);
         if (meeting == null) throw new BizException("NOT_FOUND", "会议不存在");
@@ -169,6 +258,46 @@ public class MeetingService {
         MeetingRepository.MeetingRow canceled = meetings.findById(id);
         notices.notifyCanceled(canceled, request.reason());
         return canceled;
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public MeetingDtos.SeriesActionResult cancelSeries(Long seriesId, MeetingDtos.SeriesCancelRequest request, UserPrincipal principal) {
+        if (!Set.of("ONE", "ALL").contains(request.scope())) throw new BizException("INVALID_SCOPE", "周期取消范围必须为ONE或ALL");
+        List<MeetingRepository.MeetingRow> series = meetings.findSeries(seriesId);
+        if (series.isEmpty()) throw new BizException("NOT_FOUND", "周期预约不存在");
+        MeetingRepository.MeetingRow first = series.get(0);
+        boolean owner = first.userId().equals(principal.id());
+        boolean admin = principal.role().equals("SYSTEM_ADMIN");
+        if (!owner && !admin) throw new BizException("FORBIDDEN", "没有权限取消该周期预约", org.springframework.http.HttpStatus.FORBIDDEN);
+        if (admin && !owner && (request.reason() == null || request.reason().isBlank())) throw new BizException("REASON_REQUIRED", "管理员取消会议必须填写原因");
+        Long roomId = first.roomId();
+        rooms.lockRoom(roomId);
+        meetings.lockSeries(seriesId);
+        series = meetings.findSeries(seriesId);
+        LocalDateTime now = rules.now();
+        if ("ONE".equals(request.scope())) {
+            if (request.meetingId() == null) throw new BizException("INVALID_REQUEST", "单次取消必须提供场次ID");
+            MeetingRepository.MeetingRow target = series.stream().filter(item -> item.id().equals(request.meetingId())).findFirst().orElse(null);
+            if (target == null) throw new BizException("NOT_FOUND", "周期场次不存在");
+            boolean maintenance = admin && request.reason() != null && !request.reason().isBlank();
+            if (!target.startTime().isAfter(now) && !maintenance) throw new BizException("ALREADY_STARTED", "会议开始后申请人不能取消");
+            if (!target.endTime().isAfter(now)) throw new BizException("ALREADY_ENDED", "会议已结束，不能取消");
+            if (meetings.cancel(target.id(), principal.id(), request.reason()) == 0) throw new BizException("INVALID_STATUS", "该场次不能取消");
+            MeetingRepository.MeetingRow canceled = meetings.findById(target.id());
+            meetings.addAudit(principal.id(), "MEETING_SERIES_CANCEL_ONE", "取消周期预约场次：" + canceled.subject());
+            notices.notifyCanceled(canceled, request.reason());
+            return new MeetingDtos.SeriesActionResult(seriesId, meetings.findSeries(seriesId));
+        }
+        int changed = meetings.cancelSeries(seriesId, principal.id(), request.reason(), now);
+        if (changed == 0) throw new BizException("INVALID_STATUS", "没有可取消的未开始场次");
+        List<MeetingRepository.MeetingRow> canceled = meetings.findSeries(seriesId);
+        for (MeetingRepository.MeetingRow meeting : canceled) {
+            if ("CANCELED".equals(meeting.status())) {
+                meetings.addAudit(principal.id(), "MEETING_SERIES_CANCEL", "取消周期预约场次：" + meeting.subject());
+                notices.notifyCanceled(meeting, request.reason());
+            }
+        }
+        return new MeetingDtos.SeriesActionResult(seriesId, canceled);
     }
 
     public List<MeetingDtos.Recommendation> recommend(Integer attendNum, Integer floorNo, LocalDateTime start, LocalDateTime end, Map<String, Integer> requirements) {
@@ -221,6 +350,7 @@ public class MeetingService {
         rooms.listRooms().stream().map(RoomRepository.RoomRow::id).sorted().forEach(rooms::lockRoom);
         for (var candidate : meetings.dueStates(now)) {
             var meeting = meetings.lockById(candidate.id());
+            if (meeting == null) continue;
             String next = meeting.status().equals("PENDING") ? "EXPIRED" : !meeting.endTime().isAfter(now) ? "COMPLETED" : "IN_PROGRESS";
             if (meetings.transition(meeting.id(), meeting.status(), next)) {
                 meetings.addAudit(meeting.userId(), "AUTO_" + next, "系统自动流转：" + meeting.subject() + " → " + next);
@@ -281,13 +411,13 @@ public class MeetingService {
     }
 
     private boolean canView(MeetingRepository.MeetingRow meeting, UserPrincipal principal) {
-        return principal.role().equals("SYSTEM_ADMIN") || (principal.role().equals("DEPT_ADMIN") && principal.deptId().equals(meeting.deptId()))
+        return DepartmentScopePolicy.canAccessDepartment(principal, meeting.deptId())
                 || meeting.userId().equals(principal.id()) || meeting.attendees().stream().anyMatch(item -> item.userId().equals(principal.id()));
     }
 
     private boolean canApprove(MeetingRepository.MeetingRow meeting, UserPrincipal principal) {
         if (meeting.applicantRole().equals("SYSTEM_ADMIN") && !principal.role().equals("SYSTEM_ADMIN")) return false;
-        return (principal.role().equals("SYSTEM_ADMIN") || (principal.role().equals("DEPT_ADMIN") && principal.deptId().equals(meeting.deptId()))) && !meeting.userId().equals(principal.id());
+        return DepartmentScopePolicy.canApproveDepartment(principal, meeting.deptId()) && !meeting.userId().equals(principal.id());
     }
 
     private double round(double value) { return Math.round(value * 10) / 10.0; }

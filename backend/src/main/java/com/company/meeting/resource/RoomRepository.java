@@ -48,6 +48,15 @@ public class RoomRepository {
         return count != null && count > 0;
     }
 
+    public boolean hasRoomConflictExceptSeries(Long roomId, LocalDateTime start, LocalDateTime end, Long seriesId) {
+        Integer count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM meeting_book
+                WHERE room_id = ? AND deleted = 0 AND status IN ('PENDING','APPROVED','IN_PROGRESS')
+                  AND start_time < ? AND end_time > ? AND (series_id IS NULL OR series_id <> ?)
+                """, Integer.class, roomId, end, start, seriesId);
+        return count != null && count > 0;
+    }
+
     public boolean hasUserConflict(Long userId, LocalDateTime start, LocalDateTime end, Long exceptId) {
         Integer count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM meeting_book b

@@ -9,3 +9,4 @@ spring:
       mode: ${MEETING_DB_INIT_MODE:never}
 meeting:
   demo-data: ${MEETING_DEMO_DATA:false}
+

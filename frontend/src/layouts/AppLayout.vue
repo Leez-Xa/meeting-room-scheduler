@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Calendar, Grid, OfficeBuilding, Plus, Tickets, CircleCheck, Document, SwitchButton, Bell, Setting } from '@element-plus/icons-vue'
+import { Calendar, Grid, OfficeBuilding, Plus, Tickets, CircleCheck, Document, SwitchButton, Bell, Setting, DataAnalysis } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { api, showError } from '../api/client'
 const auth = useAuthStore()
@@ -18,6 +18,7 @@ const menus = computed(() => [
   { path: '/', label: '工作台', icon: Grid }, { path: '/rooms', label: '会议室与排期', icon: Calendar },
   { path: '/booking', label: '发起预约', icon: Plus }, { path: '/meetings', label: '我的会议', icon: Tickets },
   ...(auth.canApprove ? [{ path: '/approval', label: '会议审批', icon: CircleCheck }] : []),
+  ...(auth.canApprove ? [{ path: '/reports', label: '会议报表', icon: DataAnalysis }] : []),
   ...(auth.isAdmin ? [{ path: '/admin', label: '基础数据', icon: OfficeBuilding }, { path: '/settings', label: '系统参数', icon: Setting }, { path: '/audit', label: '审计日志', icon: Document }] : []),
   { path: '/notices', label: '消息中心', icon: Bell, badge: unreadCount.value },
   { path: '/account', label: '账号设置', icon: Tickets },

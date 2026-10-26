@@ -15,3 +15,8 @@
 .notice-copy small { color:#a1aca5; font-size:11px; }
 .notice-pagination { display:flex; justify-content:flex-end; padding-top:18px; }
 .menu-badge { margin-left:auto; }
+.report-panel { max-width: 1100px; padding: 28px; background: #fff; border: 1px solid #e0e8e2; border-radius: 6px; }
+.report-form { display: grid; grid-template-columns: 1.6fr 1fr 1fr auto; gap: 16px; align-items: end; }
+.report-form .el-form-item { margin-bottom: 0; }
+.report-form .el-date-editor, .report-form .el-select { width: 100%; }
+@media(max-width:760px) { .report-panel { padding: 18px; } .report-form { grid-template-columns: 1fr; gap: 4px; } .report-form .el-form-item { margin-bottom: 12px; } }
