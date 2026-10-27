@@ -13,6 +13,9 @@ const router = useRouter()
 const meetings = ref<Meeting[]>([])
 const status = ref('ALL')
 const detail = ref<Meeting | null>(null)
+const cancelTarget = ref<Meeting | null>(null)
+const cancelScope = ref<'ONE' | 'ALL'>('ONE')
+const cancelBusy = ref(false)
 const loading = ref(false)
 const scope=ref('mine')
 const page=ref(1)
@@ -20,20 +23,21 @@ const total=ref(0)
 const filtered = computed(() => meetings.value)
 async function load() { loading.value = true; try { const result=await api<Page<Meeting>>(`/meetings?scope=${scope.value}&page=${page.value}&pageSize=20${status.value==='ALL'?'':`&status=${status.value}`}`); meetings.value=result.records; total.value=Number(result.total) } catch (e) { showError(e) } finally { loading.value = false } }
 function changeFilter() { page.value=1; load() }
-async function cancelSeries(meeting: Meeting) {
-  if (!meeting.seriesId) return
-  let scope: 'ALL' | 'ONE' = 'ALL'
-  try {
-    await ElMessageBox.confirm(`“${meeting.subject}”是周期预约。确认取消全部未开始场次吗？`, '取消周期预约', { confirmButtonText: '取消全部未开始场次', cancelButtonText: '仅取消本场' })
-  } catch (error) {
-    if (error === 'cancel') scope = 'ONE'
-    else return
-  }
+function cancelSeries(meeting: Meeting) {
+  cancelScope.value = 'ONE'
+  cancelTarget.value = meeting
+}
+async function confirmSeriesCancel() {
+  const meeting = cancelTarget.value
+  if (!meeting?.seriesId || cancelBusy.value) return
+  const scope = cancelScope.value
+  cancelBusy.value = true
   try {
     await api(`/meetings/series/${meeting.seriesId}/cancel`, { method: 'POST', body: JSON.stringify({ scope, meetingId: scope === 'ONE' ? meeting.id : null, reason: '申请人取消周期预约' }) })
+    cancelTarget.value = null
     ElMessage.success(scope === 'ALL' ? '已取消全部未开始场次' : '已取消本场')
     await load()
-  } catch (e) { showError(e) }
+  } catch (e) { showError(e) } finally { cancelBusy.value = false }
 }
 
 async function cancel(meeting: Meeting) {
@@ -65,5 +69,10 @@ onMounted(load)
     </el-table>
     <el-pagination :current-page="page" :total="total" :page-size="20" layout="total, prev, pager, next" style="margin-top:20px" @current-change="(value:number)=>{page=value;load()}" />
     <el-dialog :model-value="!!detail" title="会议详情" width="min(600px, 94vw)" @close="detail=null"><MeetingDetail :meeting="detail" /></el-dialog>
+    <el-dialog :model-value="!!cancelTarget" title="取消周期预约" width="min(520px, 94vw)" :close-on-click-modal="!cancelBusy" :close-on-press-escape="!cancelBusy" :show-close="!cancelBusy" @close="cancelTarget=null">
+      <template v-if="cancelTarget"><p>{{ cancelTarget.subject }} · 第 {{ cancelTarget.seriesIndex }}/{{ cancelTarget.seriesTotal }} 场</p><p class="muted">{{ cancelTarget.startTime.replace('T', ' ').slice(0, 16) }} · {{ cancelTarget.roomName }}</p>
+      <el-radio-group v-model="cancelScope" :disabled="cancelBusy" aria-label="取消范围"><el-radio value="ONE">仅取消本场</el-radio><el-radio value="ALL">取消全部未开始场次</el-radio></el-radio-group><p class="field-note">确认后将释放所选场次的会议室和设备，请核对取消范围。</p></template>
+      <template #footer><el-button :disabled="cancelBusy" @click="cancelTarget=null">返回</el-button><el-button type="danger" :loading="cancelBusy" @click="confirmSeriesCancel">{{ cancelScope==='ONE' ? '确认取消本场' : '确认取消全部未开始场次' }}</el-button></template>
+    </el-dialog>
   </section>
 </template>

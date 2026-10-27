@@ -10,9 +10,10 @@ const dateRange = ref<[string, string] | null>(null)
 const roomId = ref('')
 const status = ref('')
 const loading = ref(false)
+const loadError = ref('')
 const downloading = ref(false)
 const statuses = [
-  ['PENDING', '待审批'], ['APPROVED', '预约成功'], ['IN_PROGRESS', '进行中'],
+  ['DRAFT', '草稿'], ['PENDING', '待审批'], ['APPROVED', '预约成功'], ['IN_PROGRESS', '进行中'],
   ['COMPLETED', '已结束'], ['CANCELED', '已取消'], ['REJECTED', '已拒绝'], ['EXPIRED', '已过期'],
 ]
 
@@ -25,6 +26,8 @@ function queryString() {
   return params.toString()
 }
 async function exportReport() {
+  if (downloading.value) return
+  if (dateRange.value && dateRange.value[0] > dateRange.value[1]) { ElMessage.warning('开始日期不能晚于结束日期'); return }
   downloading.value = true
   try {
     await download(`/reports/meetings.csv${queryString() ? `?${queryString()}` : ''}`, '会议报表.csv')
@@ -33,13 +36,15 @@ async function exportReport() {
 }
 async function load() {
   loading.value = true
-  try { rooms.value = await api<Room[]>('/resources/rooms') } catch (e) { showError(e) } finally { loading.value = false }
+  loadError.value = ''
+  try { rooms.value = await api<Room[]>('/resources/rooms') } catch (e) { loadError.value = e instanceof Error ? e.message : '会议室加载失败'; showError(e) } finally { loading.value = false }
 }
 onMounted(load)
 </script>
 <template>
   <section>
     <div class="page-heading"><div><h1>会议报表</h1><p class="muted">按日期、会议室和状态导出会议记录 · 部门管理员仅可导出本部门</p></div><el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button></div>
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon><el-button text @click="load">重试加载会议室</el-button></el-alert>
     <div class="report-panel">
       <el-form label-position="top" class="report-form">
         <el-form-item label="日期范围"><el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" /></el-form-item>

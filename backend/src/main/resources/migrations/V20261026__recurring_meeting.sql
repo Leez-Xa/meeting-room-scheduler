@@ -20,9 +20,36 @@ CREATE TABLE IF NOT EXISTS meeting_series (
     INDEX idx_series_user (user_id, create_time, deleted)
 );
 
-ALTER TABLE meeting_book ADD COLUMN IF NOT EXISTS series_id BIGINT NULL;
-ALTER TABLE meeting_book ADD COLUMN IF NOT EXISTS series_index INT NULL;
-ALTER TABLE meeting_book ADD COLUMN IF NOT EXISTS series_total INT NULL;
+SET @series_column_exists = (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'meeting_book' AND column_name = 'series_id'
+);
+SET @series_column_sql = IF(@series_column_exists = 0,
+    'ALTER TABLE meeting_book ADD COLUMN series_id BIGINT NULL', 'SELECT 1');
+PREPARE series_column_stmt FROM @series_column_sql;
+EXECUTE series_column_stmt;
+DEALLOCATE PREPARE series_column_stmt;
+
+SET @series_column_exists = (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'meeting_book' AND column_name = 'series_index'
+);
+SET @series_column_sql = IF(@series_column_exists = 0,
+    'ALTER TABLE meeting_book ADD COLUMN series_index INT NULL', 'SELECT 1');
+PREPARE series_column_stmt FROM @series_column_sql;
+EXECUTE series_column_stmt;
+DEALLOCATE PREPARE series_column_stmt;
+
+SET @series_column_exists = (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'meeting_book' AND column_name = 'series_total'
+);
+SET @series_column_sql = IF(@series_column_exists = 0,
+    'ALTER TABLE meeting_book ADD COLUMN series_total INT NULL', 'SELECT 1');
+PREPARE series_column_stmt FROM @series_column_sql;
+EXECUTE series_column_stmt;
+DEALLOCATE PREPARE series_column_stmt;
+
 SET @series_index_exists = (
     SELECT COUNT(*) FROM information_schema.statistics
     WHERE table_schema = DATABASE() AND table_name = 'meeting_book' AND index_name = 'idx_book_series'

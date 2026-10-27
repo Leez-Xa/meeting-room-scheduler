@@ -25,8 +25,8 @@ public class MeetingReportRepository {
                 """);
         List<Object> args = new ArrayList<>();
         if ("DEPT_ADMIN".equals(principal.role())) { sql.append(" AND b.dept_id=?"); args.add(principal.deptId()); }
-        if (start != null) { sql.append(" AND b.end_time>=?"); args.add(start.atStartOfDay()); }
-        if (end != null) { sql.append(" AND b.start_time<?"); args.add(end.plusDays(1).atStartOfDay()); }
+        if (start != null) { sql.append(" AND b.end_time>?"); args.add(start.atStartOfDay()); }
+        if (end != null) { sql.append(" AND b.start_time<=?"); args.add(end.atTime(23, 59, 59, 999999000)); }
         if (roomId != null) { sql.append(" AND b.room_id=?"); args.add(roomId); }
         if (status != null && !status.isBlank()) { sql.append(" AND b.status=?"); args.add(status); }
         sql.append(" ORDER BY b.start_time,b.id");

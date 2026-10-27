@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Calendar, Check, Document, Promotion, Refresh } from '@element-plus/icons-vue'
-import { api, showError } from '../api/client'
+import { api, ApiError, showError } from '../api/client'
 import BookingTimePicker from '../components/BookingTimePicker.vue'
 import { bookingTimeError, serverTimeAfter } from '../utils/bookingTime'
 import { useAuthStore } from '../stores/auth'
@@ -15,6 +15,7 @@ const users = ref<User[]>([])
 const rooms = ref<Room[]>([])
 const recommendations = ref<Recommendation[]>([])
 const busy = ref(false)
+const conflictDates = ref<string[]>([])
 const loadingRecommendations = ref(false)
 const rules=ref<BookingRules>()
 let rulesReceivedAt = performance.now()
@@ -32,10 +33,13 @@ async function recommend() {
   try { const params = new URLSearchParams({ attendNum: String(attendeeCount.value), floorNo: String(auth.user!.floorNo) }); if (form.startTime) params.set('start', form.startTime); if (form.endTime) params.set('end', form.endTime); for (const [type,quantity] of Object.entries(form.devices)) if (quantity > 0) params.set(`device_${type}`, String(quantity)); recommendations.value = await api(`/meetings/recommendations?${params}`) } catch (e) { showError(e) } finally { loadingRecommendations.value = false }
 }
 async function save(submit: boolean) {
+  if (busy.value) return
+  if (!submit && form.recurring) { ElMessage.warning('周期预约暂不支持保存草稿，请直接提交'); return }
   if (!form.subject || !form.startTime || !form.endTime) { ElMessage.warning('请填写会议主题和起止时间'); return }
   const error = timeError(); if (error) { ElMessage.warning(error); return }
   if (submit && !form.roomId) { ElMessage.warning('请选择会议室'); return }
   busy.value = true
+  conflictDates.value = []
   try {
     if (submit) {
       const result = form.recurring
@@ -46,7 +50,7 @@ async function save(submit: boolean) {
       router.push('/meetings')
     }
     else { const draft = await api<Meeting>('/meetings/drafts', { method: 'POST', body: JSON.stringify(payload()) }); form.id = draft.id; ElMessage.success('草稿已保存') }
-  } catch (e) { showError(e) } finally { busy.value = false }
+  } catch (e) { if (e instanceof ApiError) conflictDates.value = e.details?.conflictDates || []; showError(e) } finally { busy.value = false }
 }
 onMounted(async () => {
   try { [users.value, rooms.value, rules.value] = await Promise.all([api<User[]>('/resources/users'), api<Room[]>('/resources/rooms'),api<BookingRules>('/resources/rules')]);
@@ -74,7 +78,7 @@ onUnmounted(()=>clearTimeout(recommendTimer))
 <el-form-item :label="`参会人 · ${attendeeCount} 人`"><el-select v-model="form.attendeeIds" multiple filterable placeholder="选择内部员工" style="width:100%"><el-option v-for="user in users" :key="user.id" :value="user.id" :label="`${user.realName} · ${user.deptName}`" :disabled="user.id === auth.user?.id" /></el-select><div class="field-note">申请人：{{ auth.user?.realName }}</div></el-form-item>
 <h2><span class="step-number">02</span>设备与会议室</h2><div class="device-requirements"><div v-for="(label,type) in deviceLabels" :key="type"><label>{{ label }}</label><el-input-number v-model="(form.devices as Record<string,number>)[type]" :min="0" :max="20" size="small" /></div></div>
 <el-form-item label="会议室" required><el-select v-model="form.roomId" placeholder="选择会议室" style="width:100%"><el-option v-for="room in rooms" :key="room.id" :value="room.id" :label="`${room.roomName} · ${room.floorNo}层 · ${room.capacity}人`" :disabled="!room.active" /></el-select></el-form-item>
-</el-form><div class="booking-actions"><el-button :icon="Document" :loading="busy" @click="save(false)">保存草稿</el-button><el-button type="primary" :icon="Promotion" :loading="busy" @click="save(true)">提交申请</el-button></div></div>
-<aside class="recommendation-panel"><div class="section-heading"><h2>推荐会议室</h2><el-tooltip content="重新推荐"><el-button :icon="Refresh" circle aria-label="重新推荐" :loading="loadingRecommendations" @click="recommend" /></el-tooltip></div><div class="recommendation-weights"><span>人数 {{ Math.round((rules?.weights.capacity ?? 0.5)*100) }}%</span><span>设备 {{ Math.round((rules?.weights.device ?? 0.3)*100) }}%</span><span>楼层 {{ Math.round((rules?.weights.floor ?? 0.2)*100) }}%</span></div>
+</el-form><el-alert v-if="conflictDates.length" title="以下日期存在资源冲突，请调整会议室或时间后重新提交" type="error" :closable="false" show-icon><p>{{ conflictDates.join("、") }}</p><p>本次整组未提交，表单内容已保留。</p></el-alert><div class="booking-actions"><el-button v-if="!form.recurring" :icon="Document" :loading="busy" @click="save(false)">保存草稿</el-button><el-button type="primary" :icon="Promotion" :loading="busy" @click="save(true)">提交申请</el-button></div></div>
+<aside class="recommendation-panel"><div class="section-heading"><h2>推荐会议室</h2><el-tooltip content="重新推荐"><el-button :icon="Refresh" circle aria-label="重新推荐" :loading="loadingRecommendations" @click="recommend" /></el-tooltip></div><p v-if="form.recurring" class="field-note">推荐仅检查首场，提交时会校验全部场次。</p><div class="recommendation-weights"><span>人数 {{ Math.round((rules?.weights.capacity ?? 0.5)*100) }}%</span><span>设备 {{ Math.round((rules?.weights.device ?? 0.3)*100) }}%</span><span>楼层 {{ Math.round((rules?.weights.floor ?? 0.2)*100) }}%</span></div>
 <div v-loading="loadingRecommendations"><el-empty v-if="!recommendations.length" :description="!form.startTime || !form.endTime ? '先选择日期和起止时间，查看可用会议室' : '没有符合条件的会议室'" :image-size="70" /><article v-for="(rec,index) in recommendations" :key="rec.roomId" class="recommendation-item" :class="{selected:form.roomId===rec.roomId}" @click="form.roomId=rec.roomId" tabindex="0" role="button" @keydown.enter="form.roomId=rec.roomId"><div class="recommendation-title"><div><span class="rank">{{ String(index+1).padStart(2,'0') }}</span><h3>{{ rec.roomName }}</h3></div><strong>{{ rec.totalScore }}<small>分</small></strong></div><p class="muted">{{ rec.floorNo }}层 · {{ rec.capacity }}人 · 相差{{ rec.distance }}层</p><div class="score-parts"><span>人数 {{ rec.capacityScore }}</span><span>设备 {{ rec.deviceScore }}</span><span>楼层 {{ rec.floorScore }}</span></div><p class="rec-reason">{{ rec.reason }}</p><div v-if="form.roomId===rec.roomId" class="selected-label"><el-icon><Check /></el-icon>已选择</div></article></div></aside></div>
 </section></template>

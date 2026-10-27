@@ -191,6 +191,7 @@ public class MeetingService {
         if (!canApprove(meeting, principal)) throw new BizException("FORBIDDEN", "没有权限审批该会议", org.springframework.http.HttpStatus.FORBIDDEN);
         RoomRepository.RoomRow room = rooms.lockRoom(meeting.roomId());
         meeting = meetings.lockById(id);
+        if (meeting.seriesId() != null) throw new BizException("INVALID_STATUS", "周期预约请使用整组审批");
         if (!"PENDING".equals(meeting.status())) throw new BizException("INVALID_STATUS", "只有待审批会议可以审批");
         if (!meeting.startTime().isAfter(rules.now())) throw new BizException("ALREADY_STARTED", "申请已到开始时间，不能审批");
         if (request.approved()) {
@@ -221,17 +222,31 @@ public class MeetingService {
         RoomRepository.RoomRow room = rooms.lockRoom(series.get(0).roomId());
         meetings.lockSeries(seriesId);
         series = meetings.findSeries(seriesId);
-        if (series.stream().anyMatch(meeting -> !"PENDING".equals(meeting.status()))) throw new BizException("INVALID_STATUS", "周期预约中存在不可审批的场次");
-        if (series.stream().anyMatch(meeting -> !meeting.startTime().isAfter(rules.now()))) throw new BizException("ALREADY_STARTED", "周期预约中存在已开始场次");
+        if (series.stream().anyMatch(meeting -> !Set.of("PENDING", "CANCELED", "EXPIRED").contains(meeting.status()))) {
+            throw new BizException("INVALID_STATUS", "周期预约已处理，请刷新列表");
+        }
+        LocalDateTime now = rules.now();
+        List<MeetingRepository.MeetingRow> pending = series.stream()
+                .filter(meeting -> "PENDING".equals(meeting.status()) && meeting.startTime().isAfter(now)).toList();
+        if (pending.isEmpty()) throw new BizException("INVALID_STATUS", "没有可审批的未开始场次");
+        for (var meeting : series) {
+            if ("PENDING".equals(meeting.status()) && !meeting.startTime().isAfter(now)
+                    && meetings.transition(meeting.id(), "PENDING", "EXPIRED")) {
+                meetings.addAudit(meeting.userId(), "AUTO_EXPIRED", "系统自动流转：" + meeting.subject() + " → EXPIRED");
+                notices.notifyExpired(meetings.findById(meeting.id()));
+            }
+        }
         if (request.approved() && (room == null || !room.active())) throw new BizException("ROOM_UNAVAILABLE", "会议室不存在或已停用");
         if (request.approved()) {
-            List<String> conflicts = series.stream().filter(meeting -> rooms.hasRoomConflictExceptSeries(room.id(), meeting.startTime(), meeting.endTime(), seriesId))
+            List<String> conflicts = pending.stream().filter(meeting -> rooms.hasRoomConflictExceptSeries(room.id(), meeting.startTime(), meeting.endTime(), seriesId))
                     .map(meeting -> meeting.startTime().toLocalDate().toString()).toList();
             if (!conflicts.isEmpty()) throw new BizException("RECURRING_CONFLICT", "审批时发现会议室冲突：" + String.join("、", conflicts), org.springframework.http.HttpStatus.CONFLICT, Map.of("conflictDates", conflicts));
         }
         String status = request.approved() ? "APPROVED" : "REJECTED";
-        meetings.updateSeriesApproval(seriesId, status, principal.id(), request.comment());
-        for (MeetingRepository.MeetingRow meeting : series) {
+        if (meetings.updateSeriesApproval(seriesId, status, principal.id(), request.comment()) != pending.size()) {
+            throw new BizException("INVALID_STATUS", "周期预约状态已变化，请刷新列表");
+        }
+        for (MeetingRepository.MeetingRow meeting : pending) {
             meetings.addApprovalHistory(meeting.id(), principal.id(), request.approved() ? "APPROVE" : "REJECT", request.comment());
             meetings.addAudit(principal.id(), request.approved() ? "MEETING_SERIES_APPROVE" : "MEETING_SERIES_REJECT", (request.approved() ? "周期预约审批通过：" : "周期预约拒绝：") + meeting.subject());
             notices.notifyApproval(meetings.findById(meeting.id()), request.approved(), request.comment());
@@ -288,11 +303,14 @@ public class MeetingService {
             notices.notifyCanceled(canceled, request.reason());
             return new MeetingDtos.SeriesActionResult(seriesId, meetings.findSeries(seriesId));
         }
+        Set<Long> cancelIds = series.stream().filter(meeting -> Set.of("PENDING", "APPROVED").contains(meeting.status())
+                && meeting.startTime().isAfter(now)).map(MeetingRepository.MeetingRow::id).collect(Collectors.toSet());
         int changed = meetings.cancelSeries(seriesId, principal.id(), request.reason(), now);
         if (changed == 0) throw new BizException("INVALID_STATUS", "没有可取消的未开始场次");
+        if (changed != cancelIds.size()) throw new BizException("INVALID_STATUS", "周期预约状态已变化，请刷新列表");
         List<MeetingRepository.MeetingRow> canceled = meetings.findSeries(seriesId);
         for (MeetingRepository.MeetingRow meeting : canceled) {
-            if ("CANCELED".equals(meeting.status())) {
+            if (cancelIds.contains(meeting.id())) {
                 meetings.addAudit(principal.id(), "MEETING_SERIES_CANCEL", "取消周期预约场次：" + meeting.subject());
                 notices.notifyCanceled(meeting, request.reason());
             }
