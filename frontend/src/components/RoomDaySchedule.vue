@@ -62,7 +62,7 @@ function scrollRooms(direction: number) { scroller.value?.scrollBy({ left: direc
   <div ref="scroller" class="day-scroller" tabindex="0" aria-label="按会议室展示的日排期，左右滚动查看会议室，上下滚动页面查看全天时段" @scroll="syncHeaders">
     <div class="day-grid" :style="{ minWidth: `${64 + rooms.length * 242}px` }">
       <div class="day-body" :style="{ ...columns, height: `${gridHeight}px` }">
-        <div class="day-times"><span v-for="(slot, index) in slots.filter((_, index) => index % 2 === 0)" :key="slot.start" :style="{ top: `${(slot.start - open) * minuteHeight}px` }" :class="{ first: index === 0 }">{{ minuteLabel(Math.round(slot.start)) }}</span></div>
+        <div class="day-times"><span v-for="(slot, index) in slots.filter((_, index) => index % 2 === 0)" :key="slot.start" :style="{ top: `${(slot.start - open) * minuteHeight}px` }" :class="{ first: index === 0 }">{{ minuteLabel(Math.round(slot.start)) }}</span><span class="closing-time" :style="{ top: `${gridHeight}px` }">{{ minuteLabel(Math.round(close)) }}</span></div>
         <div v-for="room in rooms" :key="room.id" class="day-room-column" :class="{ inactive: !room.active }" :style="{ '--room-ink': colors[room.id]?.ink, '--room-wash': colors[room.id]?.wash, '--room-line': colors[room.id]?.line }">
           <button v-for="slot in slots" :key="slot.start" type="button" class="empty-slot" :style="{ height: `${(slot.end - slot.start) * minuteHeight}px` }" :disabled="!selectable(room, slot)" :aria-label="`${date} ${room.roomName} ${minuteLabel(Math.round(slot.start))}至${minuteLabel(Math.round(slot.end))}，发起预约`" @click="emit('select', room, wallTime(slot.start), wallTime(slot.end))"><span>＋ 预约此时段</span></button>
           <span v-if="!layouts[room.id]?.length" class="day-empty">{{ room.active ? '当天暂无会议' : '会议室已停用' }}</span>
@@ -100,6 +100,7 @@ function scrollRooms(direction: number) { scroller.value?.scrollBy({ left: direc
 .day-times { position:sticky; left:0; z-index:4; background:#fff; border-right:1px solid var(--schedule-border); }
 .day-times span { position:absolute; right:11px; color:#60766a; font-size:11px; transform:translateY(-50%); font-variant-numeric:tabular-nums; }
 .day-times span.first { transform:translateY(5px); }
+.day-times span.closing-time { transform:translateY(-100%); }
 .day-room-column { position:relative; min-width:0; border-right:1px solid var(--schedule-border); }
 .empty-slot { display:block; padding:0; width:100%; border:0; border-bottom:1px solid #e8eeea; background:#fff; text-align:center; cursor:pointer; color:#2d6d50; }
 .empty-slot:nth-child(even) { border-bottom-color:#dce6df; }
