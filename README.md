@@ -1,89 +1,179 @@
-# 企业会议室智能预约调度系统
+<div align="center">
 
-Java 21 + Spring Boot 3.5 + Vue 3/TypeScript/Vite 的企业会议室预约调度系统。后端通过 `/api/v1` 提供 JSON 接口，前端与后端独立运行。
+# 会序 · 企业会议室智能预约调度系统
 
-## 环境要求
+**让会议室安排、人员协调与审批流转有序衔接。**
 
-- Java 21
-- Node.js 20 或更高版本
-- Maven 3.9+（也可使用 IntelliJ IDEA 自带 Maven）
-- MySQL 8；无 MySQL 时可使用 H2 demo profile
+基于 Java 21、Spring Boot 3.5 与 Vue 3 的前后端分离项目，覆盖会议预约、资源推荐、周期会议、审批、通知与报表，支持 MySQL 8 和 H2 本机演示。
 
-## 启动后端
+![Java](https://img.shields.io/badge/Java-21-ED8B00?style=flat-square&logo=openjdk&logoColor=white) ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Vue](https://img.shields.io/badge/Vue-3-42B883?style=flat-square&logo=vuedotjs&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white) ![MySQL](https://img.shields.io/badge/MySQL-8-4479A1?style=flat-square&logo=mysql&logoColor=white)
 
-在 `backend/` 目录执行：
+[功能特性](#功能特性) · [快速开始](#快速开始) · [演示账号](#演示账号) · [Windows 一键启动](#windows-一键启动) · [MySQL 部署](#mysql-部署) · [常见问题](#常见问题)
+
+</div>
+
+## 项目介绍
+
+会序面向企业内部会议室管理场景，将“选择时间与参会人 → 推荐会议室 → 提交申请 → 审批 → 查看排期”连接为完整流程。项目适合 Java 课程设计、本机演示和前后端协作开发参考。
+
+- **安排看得清**：按会议室分列展示全天排期，支持周历切换；房间固定分色，预约状态单独标注。
+- **申请有依据**：根据容量、设备和楼层推荐会议室，展示评分分项与推荐理由。
+- **冲突分开处理**：会议室和设备冲突阻止提交，人员时间冲突先提醒申请人再次确认。
+- **权限有边界**：区分系统管理员、部门管理员和普通员工，服务端校验审批范围与详情可见性。
+- **体验路径明确**：使用 H2 快速演示，使用 MySQL 8 持久化运行；Windows 可自行构建 EXE 启动入口。
+
+## 功能特性
+
+| 模块 | 已实现能力 |
+| --- | --- |
+| 工作台 | 会议室概况、个人待审批与即将开始的会议、管理入口 |
+| 会议室排期 | 单日会议室分列、周历、日期和房间筛选、空闲时段发起预约 |
+| 预约管理 | 保存草稿、提交、查看详情、开始前取消；提交前人员冲突确认 |
+| 会议室推荐 | 先过滤不可用资源，再按容量、设备与楼层评分并说明理由 |
+| 审批管理 | 部门内审批、系统管理员互审，禁止自审 |
+| 周期会议 | 每周重复 2–12 次、整组冲突回滚、整组审批、单场或全部未开始场次取消 |
+| 消息中心 | 提交、审批、取消、过期通知，以及会前提醒 |
+| 基础数据 | 部门、账号、会议室与固定设备管理；有效预约资源的维护保护 |
+| 参数与审计 | 工作日、开放时段、推荐权重、提醒参数配置与操作审计 |
+| 数据导出 | 按日期、会议室、状态筛选 CSV，按管理员权限限制导出范围 |
+
+### 排期怎么浏览
+
+默认显示所选日期的全部开放时段，初始为 **09:00–18:00**。通过页面右侧滚动条上下浏览，左右滚动查看其他会议室；房间表头保持可见，并与会议列同步移动。时间栏底部显示配置的结束时间。
+
+点击未来空闲时段，可将会议室、日期和时间带入预约表单。无权查看的会议仅显示占用信息。切换到“周历”可以查看整周安排。
+
+## 技术栈
+
+| 层次 | 技术 |
+| --- | --- |
+| 前端 | Vue 3、TypeScript、Vite、Element Plus、Vue Router、Pinia、FullCalendar |
+| 后端 | Java 21、Spring Boot 3.5、Spring Security、MyBatis-Plus |
+| 数据库 | MySQL 8；独立 H2 demo profile |
+| 接口 | `/api/v1` JSON API、OpenAPI / Swagger UI |
+| 构建与启动 | Maven、npm；Windows PowerShell 与 C# EXE 启动器 |
+
+前端与后端分别构建、启动。Vite 开发服务器将 `/api` 转发到后端；登录使用服务端会话与 CSRF 校验，密码使用 BCrypt 编码。
+
+## 快速开始
+
+### 1. 准备环境
+
+| 环境 | 要求 |
+| --- | --- |
+| JDK | 21 |
+| Node.js | 20 或更高版本 |
+| Maven | 3.9+，也可使用 IntelliJ IDEA 自带 Maven |
+| 数据库 | 快速演示无需单独安装；MySQL 模式需要 MySQL 8 |
+| 浏览器 | 现代浏览器；Windows 启动器使用已安装的 Chrome 或 Edge |
+
+获取源码并进入项目：
 
 ```powershell
+git clone https://github.com/Leez-Xa/meeting-room-scheduler.git
+cd meeting-room-scheduler
+```
+
+### 2. 构建并启动后端
+
+在项目根目录打开终端：
+
+```powershell
+cd backend
 mvn package
 java -jar target/meeting-room-scheduler-0.0.1-SNAPSHOT.jar --spring.profiles.active=demo
 ```
 
-后端默认监听 `http://127.0.0.1:8080`，首次运行会创建 H2 文件库并初始化演示数据。Maven 不在 PATH 时，可在 IDEA 的 Maven 工具窗口执行 `package`，或使用 IDEA 自带 Maven 的完整路径运行命令，无需另装 Maven。
+后端默认监听 `http://127.0.0.1:8080`。demo 模式首次运行会创建 H2 文件库并初始化演示数据，不需要手工建库。
 
-演示账号为 `admin`、`admin2`（两名系统管理员）、`dept-admin`、`ops-admin`（部门管理员），以及 `employee`、`employee2`、`employee3`、`employee4`、`employee5`、`ops-employee`、`ops-employee2`、`ops-employee3`（普通员工）。全新演示库的统一密码为 `Admin@123`。这些是公开演示数据，只用于本机体验；已有账号密码不会自动重置。系统不开放注册，正式账号由系统管理员创建。
+Maven 不在 PATH 时，可在 IDEA 的 Maven 工具窗口执行 `package`，或使用 IDEA 自带 Maven 的完整路径。仓库没有 Maven Wrapper，不需要另找 `mvnw`。
 
-已有旧 H2 文件库不应直接使用 MySQL 迁移。需要保留旧文件并独立体验时，可使用内存库，退出后数据消失：
+### 3. 安装前端依赖并启动
 
-```powershell
-java -jar target/meeting-room-scheduler-0.0.1-SNAPSHOT.jar --spring.profiles.active=demo "--spring.datasource.url=jdbc:h2:mem:meeting-demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1"
-```
-
-## 启动前端
-
-在 `frontend/` 目录执行：
+在项目根目录另开一个终端：
 
 ```powershell
+cd frontend
 npm ci
 npm run dev
 ```
 
-浏览器访问 `http://127.0.0.1:5173`，开发服务器会把 `/api` 请求转发到后端。
+打开 **http://127.0.0.1:5173**，使用下方演示账号登录。手工启动的前后端可分别通过各自终端的 `Ctrl+C` 停止。
 
-## 构建
+### 4. 试用完整预约流程
 
-```powershell
-# backend/
-mvn package
+1. 使用 `employee` 登录，在“会议室与排期”选择未来空闲时段，或进入“发起预约”。
+2. 填写主题、时间、参会人与设备需求，查看推荐结果并选择会议室。
+3. 提交申请；如有人员时间冲突，核对后再次确认。提交后的状态是“待审批”。
+4. 使用 `dept-admin` 登录，在“会议审批”中处理研发员工的申请。
+5. 审批通过后，员工可在“我的会议”和排期中看到“预约成功”；开始前可以取消。
 
-# frontend/
-npm ci
-npm run build
-```
+## 演示账号
 
-## Windows 本机 EXE 启动入口
+全新演示库的账号统一密码为 **`Admin@123`**。
 
-先按上述步骤准备 JDK、Node.js、后端 JAR 和前端依赖。在项目根目录运行：
+| 角色 | 技术研发部 | 运营管理部 |
+| --- | --- | --- |
+| 系统管理员 | `admin` | `admin2` |
+| 部门管理员 | `dept-admin` | `ops-admin` |
+| 普通员工 | `employee`、`employee2`、`employee3`、`employee4`、`employee5` | `ops-employee`、`ops-employee2`、`ops-employee3` |
+
+初始化数据包含 **12 个账号、8 间会议室和 18 条固定设备记录**。上述账号和密码是公开的虚构演示数据；正式使用时由系统管理员创建账号，系统不开放注册。
+
+初始化器只处理全新空库。已有库不会自动追加演示账号、修改密码或覆盖会议记录，需要的新资源可由系统管理员在“基础数据”中添加。
+
+## 预约与审批规则
+
+| 规则 | 行为 |
+| --- | --- |
+| 时间范围 | 使用北京时间，按 `[开始,结束)` 判断重叠；不允许跨天 |
+| 开放时段 | 默认周一至周五 09:00–18:00，可在系统参数中配置 |
+| 可预约周 | 工作日开放本周未来时段；周末同时开放下周 |
+| 资源占用 | 草稿不占资源；提交后待审批会议也占用会议室与设备 |
+| 资源冲突 | 会议室和固定设备冲突由服务端重新校验，冲突时阻止提交 |
+| 人员冲突 | 先列出冲突人员与时段，申请人明确确认后可继续提交 |
+| 内容修改 | 仅草稿可修改；提交后需要取消重约 |
+| 审批范围 | 部门管理员默认审批本部门其他人的申请；系统管理员的申请由另一名系统管理员审批 |
+| 取消范围 | 申请人可取消未开始会议；管理员维护资源取消须填写原因 |
+| 详情权限 | 申请人、参会人及有管理权限的人员可查看详情，其他员工只能查看占用 |
+
+正常流转为：**草稿 → 待审批 → 预约成功 → 进行中 → 已结束**，另有已取消、已拒绝、已过期状态。待审批会议到开始时仍未通过，会进入已过期。
+
+周期预约的首场遵守开放周，后续逐周重复；任意场次发生资源冲突时整组提交回滚。周期预约暂不支持保存草稿。默认不接入法定节假日服务，工作日以系统配置为准。
+
+## Windows 一键启动
+
+完成后端构建和前端依赖安装后，在项目根目录构建启动入口：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-launcher.ps1
 ```
 
-构建脚本使用 Windows 自带 .NET Framework 的 C# 编译器，不下载安装；未找到编译器会提示。生成 `会议室预约系统.exe` 后双击，即可自动启动前后端并打开独立浏览器页面。重复打开会回到已有控制窗口；点击“关闭全部”或关闭控制窗口会停止工具管理的服务。也可直接运行 `powershell -NoProfile -STA -ExecutionPolicy Bypass -File scripts/project-launcher.ps1` 打开控制窗口。
+脚本使用 Windows 本机 .NET Framework C# 编译器生成 **`会议室预约系统.exe`**。双击后自动启动前后端并打开独立项目页面；重复打开会恢复已有控制窗口。
 
-EXE 需留在项目根目录，与 `scripts/`、`backend/`、`frontend/` 一起使用，可创建快捷方式。它是本机启动入口，仍需已有运行环境；源码仓库不包含生成的二进制文件。构建脚本拒绝覆盖已有目标，重新构建可指定 `-OutputPath .\会议室预约系统新版.exe`。
+- 点击“关闭全部”或关闭控制窗口，可停止工具管理的服务。
+- 手动关闭页面后，可通过“重新打开页面”恢复。
+- 没有 MySQL 连接配置时使用 H2 demo；使用 MySQL 时先按下一节完成建库和连接配置。
 
-无现成 MySQL 配置时使用 H2 demo；使用 MySQL 时先完成下述建表、迁移，并在启动进程环境中设置数据库连接参数。本机私有运行目录和数据库凭据不随源码发布。端口被其他启动方式占用时会提示，工具不会接管不明进程。
+EXE 需保留在项目根目录，与 `scripts/`、`backend/`、`frontend/` 一起使用，可创建快捷方式。源码仓库不包含生成的 EXE；启动器仍依赖已有 JDK、Node.js、后端 JAR 和前端依赖，启动时不自动安装或构建。
 
-## 数据库升级
+构建脚本不会覆盖已有 EXE。已有入口可直接使用；需要另行构建时指定新名称：
 
-H2 全新库在启动时由 `backend/src/main/resources/schema.sql` 初始化。使用 MySQL 时先完成下述建库与初始化。已有 MySQL 数据库应先备份，再依次在目标数据库中执行：
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-launcher.ps1 -OutputPath .\会议室预约系统新版.exe
+```
 
-- `backend/src/main/resources/migrations/V20261014__system_config.sql`
-- `backend/src/main/resources/migrations/V20261026__recurring_meeting.sql`
+## MySQL 部署
 
-周期迁移使用元数据检查和增量 DDL，可重复执行，不清理原有预约。新版查询依赖周期表及 `series_*` 列，已有库必须在启动新版前执行迁移；`CREATE TABLE IF NOT EXISTS` 本身不会给旧表增加列。此迁移用于 MySQL，不适用于旧 H2 文件库。
+### 新建数据库
 
-如果旧库漏执行周期迁移，登录或服务启动检查可能通过，但工作台和会议列表会因缺少 `series_id` 等字段返回服务器异常。应先备份目标库、执行上述迁移，再实际登录检查工作台、会议列表及周排期；仅检查登录页或安全令牌接口不能代表业务可用。
-
-### 全新 MySQL 8 配置
-
-在仓库根目录打开 MySQL 客户端：
+在项目根目录打开 MySQL 客户端：
 
 ```powershell
 mysql -u root -p
 ```
 
-在客户端执行以下语句，将密码占位值替换为自己设置的密码：
+在客户端中执行以下语句，将密码占位值替换为自己设置的密码：
 
 ```sql
 CREATE DATABASE meeting_scheduler CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -93,62 +183,118 @@ USE meeting_scheduler;
 SOURCE backend/src/main/resources/schema.sql;
 ```
 
-然后在 PowerShell 的当前终端配置连接并启动，下面的密码仅为占位值：
+在项目根目录新开 PowerShell 终端，配置当前进程的连接信息：
 
 ```powershell
 $env:MEETING_DB_URL='jdbc:mysql://127.0.0.1:3306/meeting_scheduler?characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true'
 $env:MEETING_DB_USER='meeting_app'
 $env:MEETING_DB_PASSWORD='REPLACE_WITH_STRONG_PASSWORD'
 $env:MEETING_DB_INIT_MODE='never'
-# 仅对全新空库初始化公开演示账号与资源；已有库保持 false。
+# 仅全新空库需要公开演示数据时设为 true。
 $env:MEETING_DEMO_DATA='true'
 cd backend
 java -jar target/meeting-room-scheduler-0.0.1-SNAPSHOT.jar --spring.profiles.active=mysql
 ```
 
-首次初始化完成后停止后端，将 `MEETING_DEMO_DATA` 设为 `false` 再正常启动。演示数据初始化器只支持全新空库，已有用户或基础数据不会被自动覆盖。真实数据库凭据只配置在运行环境中，不应提交到仓库。
+首次演示数据初始化完成后，可停止后端，将 `MEETING_DEMO_DATA` 设为 `false` 再正常启动。已有库保持 `false`。上面的连接 URL 用于本机演示；数据库连接信息通过运行环境配置。
 
-上述 MySQL URL 用于本机演示；远程部署应使用相应的 TLS 和账户配置。后端和前端仍独立构建、启动，Vite 开发服务器负责转发 API 请求。接口文档可在后端登录后通过 `/swagger-ui/index.html` 或 `/api-docs` 查看。
+### 升级已有 MySQL 数据库
 
-## 预约提交确认
+先备份目标数据库，再按顺序在目标库执行以下增量脚本：
 
-点击“提交申请”后，系统先检查申请人和全部参会人的时间安排。存在人员冲突时，弹框列出人员及北京时间，选择“确认继续提交”后才会提交审批；选择“返回修改”、关闭窗口、点击遮罩或按 Esc 都会保留表单，本次申请不会提交。周期预约检查全部场次，无人员冲突则直接提交。
+1. [系统参数迁移](backend/src/main/resources/migrations/V20261014__system_config.sql)
+2. [周期预约迁移](backend/src/main/resources/migrations/V20261026__recurring_meeting.sql)
 
-正式提交时服务端仍复查人员和资源；发现新的人员冲突会显示“人员安排已变化，请重新确认”，核对后才能继续，会议室或固定设备冲突则阻止提交。人员冲突可协调后继续提交，提交成功后的状态为“待审批”，审批通过才是“预约成功”。人员预检不会创建预约、占用资源或发送通知。本次功能无需数据库结构升级。
+增量脚本不清理已有预约，可重复执行。新版查询依赖周期表和预约表的 `series_*` 字段；直接执行 `CREATE TABLE IF NOT EXISTS` 不会给旧表补列。启动器不自动升级数据库。上述脚本用于 MySQL，不适用于旧 H2 文件库。
 
-## 主要功能
+## 构建与接口文档
 
-- 三角色登录、预约、审批、取消、按会议室分列的单日排期及周历切换
-- 会议室容量、固定设备和时间冲突的服务端事务校验
-- 每周 2–12 次周期预约、整组冲突回滚、整组审批和单场/全部未开始场次取消
-- 系统管理员全量、部门管理员本部门 CSV 报表导出
-- 系统参数、站内消息、审计和启动状态恢复
+```powershell
+# 后端：在 backend/ 目录
+mvn package
 
-周期首场遵守当前开放周，后续按周重复；推荐仅检查首场，提交时检查全部场次。周期预约暂不支持保存草稿。取消、过期场次保留原状态，剩余未来待审批场次整组处理；单场审批接口不能拆分审批周期组。取消对话框须明确选择本场或全部未开始场次并确认，关闭窗口不会取消会议。
+# 前端：在 frontend/ 目录
+npm ci
+npm run build
+```
 
-CSV 支持全部业务状态（含草稿），按会议时间与筛选日期的重叠范围导出。部门管理员仅导出本部门，不含子部门；普通员工无导出权限。每次导出记录审计，并对公式开头文本做转义；CSV 使用 UTF-8 BOM，适合用 Excel 打开。预约时间均为北京时间，采用 `[开始,结束)` 区间。
+后端可运行 JAR 位于 `backend/target/`，前端生产文件位于 `frontend/dist/`。生产环境需单独提供前端静态文件服务和 `/api` 反向代理；Windows 启动器使用的是本机开发服务器。
 
-本仓库发布运行所需源码和配置；开发测试、浏览器工具及内部验收记录不随源码发布。2026-10-27 在独立 H2 和 MySQL 8.4 测试库各通过58项后端回归；2026-10-28 前端类型检查及生产构建通过，并在独立 MySQL 测试库验证人员冲突确认、跨周周期预约、审批、取消及周排期。通过原启动工具连接既有 MySQL 演示库的登录、工作台、预约详情、审批页、周排期和提交前预检也已验证；预检失败、重复点击和确认期间冲突变化均已检查。完整交付材料和验收演示流程仍在后续阶段完善。
+后端完成登录后，可访问 `http://127.0.0.1:8080/swagger-ui/index.html` 查看接口文档，OpenAPI JSON 位于 `http://127.0.0.1:8080/api-docs`。前端与后端保持独立，不由后端生成网页。
 
+## 项目结构
 
-## 会议室排期与演示资源
+```text
+meeting-room-scheduler/
+├── backend/
+│   ├── pom.xml                         # Maven 构建配置
+│   └── src/main/
+│       ├── java/com/company/meeting/   # 业务接口、权限与调度逻辑
+│       └── resources/
+│           ├── application*.yml        # H2 / MySQL 运行配置
+│           ├── schema.sql              # 数据库初始化结构
+│           └── migrations/             # MySQL 增量迁移
+├── frontend/
+│   ├── src/                            # 页面、组件、状态与接口调用
+│   ├── package-lock.json               # 前端依赖锁定
+│   └── vite.config.ts                  # 开发服务器与 API 代理
+├── scripts/
+│   ├── launcher/MeetingLauncher.cs     # EXE 入口源码
+│   ├── build-launcher.ps1              # EXE 构建脚本
+│   └── project-launcher.ps1            # Windows 服务启动与关闭
+└── README.md
+```
 
-“会议室与排期”默认按所选日期将每间会议室分为一列，也可切换周历。每间会议室使用固定颜色，卡片文字标签显示预约状态。全天时段随页面完整展开，使用页面右侧滚动条上下浏览；房间列较多时在排期内左右滚动，房间表头保持可见并与会议列同步，时间栏固定在左侧；可筛选单间会议室。点击开放范围内的未来空闲时段，会将日期、起止时间和会议室带入预约表单。无权查看的会议仅显示占用；待审批会议也占用资源。加载失败会提示重试，避免把未知占用显示为空闲。页面适配宽屏与手机，无新增前后端依赖。
+## 常见问题
 
-全新空库的演示数据共12个账号、8间会议室、18条固定设备记录，包括以下新增房间：
+<details>
+<summary>没有单独安装 Maven，能否使用 IDEA 自带的 Maven？</summary>
 
-| 会议室 | 楼层 | 容量 | 固定设备 |
-| --- | --- | --- | --- |
-| 云杉厅 | 2层 | 8人 | 显示器1、麦克风2 |
-| 听雨厅 | 3层 | 10人 | 视频会议设备1、显示器1 |
-| 映月厅 | 4层 | 16人 | 投影仪1、麦克风4 |
-| 多功能厅 | 5层 | 30人 | 投影仪2、麦克风6、视频会议设备1 |
+可以。在 IDEA 的 Maven 工具窗口执行 `package`，或使用 IDEA 自带 Maven 的完整路径运行构建命令。构建完成后，使用本机 Java 21 启动生成的 JAR。
 
-初始化器仅处理全新空库，已有库不会自动追加账号、房间或设备。已有环境可由系统管理员在“基础数据”中按需创建，保留既有预约和密码；本次界面及种子扩展不需要新的数据库结构迁移，阶段三旧库仍需先完成上文的周期迁移。
+</details>
 
-2026-10-28本版本前端类型检查及生产构建通过，独立H2后端60项测试和独立MySQL 8.4测试库58项测试通过；另完成14项排期算法检查、30项实际本机演示环境浏览器检查，以及12项独立MySQL预约、人员冲突确认、审批、取消与排期释放检查。H2新增种子测试不计入MySQL测试范围。
+<details>
+<summary>为什么“提交成功”后还显示待审批？</summary>
 
+提交成功表示申请已进入审批流程，此时开始占用资源；审批通过后才显示“预约成功”。人员冲突确认只表示申请人同意继续提交，不会跳过审批。
 
-2026-10-28排期滚动修正通过前端类型检查、生产构建及59项浏览器检查，覆盖7种窗口尺寸、原生上下/左右滚动条拖动、全天时段到达、表头对齐、内容放大和周历切换。本轮仅调整前端展示，不涉及后端或数据库变更。
+</details>
 
-时间栏底部显示系统配置的开放结束时间，默认18:00，结束刻度完整显示在网格内。
+<details>
+<summary>登录正常，但工作台或会议列表提示服务器异常？</summary>
+
+已有 MySQL 库应先检查是否完成周期预约增量迁移。缺少周期表或 `series_*` 字段时，登录接口可能正常，业务查询仍会失败。先备份、执行迁移，再检查工作台、会议列表和排期。
+
+</details>
+
+<details>
+<summary>怎样独立体验新版本，并保留旧 H2 文件库？</summary>
+
+在 `backend/` 目录使用新的内存库启动：
+
+```powershell
+java -jar target/meeting-room-scheduler-0.0.1-SNAPSHOT.jar --spring.profiles.active=demo "--spring.datasource.url=jdbc:h2:mem:meeting-demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1"
+```
+
+原文件库会保留，内存演示数据随该后端进程退出而消失。旧 H2 库不要直接使用 MySQL 迁移脚本。
+
+</details>
+
+<details>
+<summary>EXE 能否单独复制到另一台电脑使用？</summary>
+
+当前 EXE 是本机启动入口，需要项目目录、运行环境、已构建后端和前端依赖一起使用。它不是包含全部运行环境的安装包。
+
+</details>
+
+<details>
+<summary>8080 或 5173 端口被占用怎么办？</summary>
+
+先确认是否已有一套项目服务运行。启动器不会接管不明进程；若之前是手工启动，请在原终端正常停止后再使用 EXE。不要通过删除数据库或重建项目来解决端口占用。
+
+</details>
+
+---
+
+项目持续迭代中。反馈问题时，请描述操作步骤、预期结果和实际结果；附日志前先移除数据库密码、令牌等凭据。
