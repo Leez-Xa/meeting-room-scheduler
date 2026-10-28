@@ -1,4 +1,4 @@
-﻿param([ValidateSet('Ui','Start','Stop','Status','Open')][string]$Action='Ui', [switch]$NoPage)
+﻿param([ValidateSet('Ui','Start','Stop','Status','Open')][string]$Action='Ui', [switch]$NoPage, [switch]$AutoStart)
 $ErrorActionPreference='Stop'
 $script:ProjectRoot=Split-Path -Parent $PSScriptRoot
 $script:WorkRoot=Join-Path $script:ProjectRoot 'work\launcher'
@@ -29,8 +29,13 @@ function Get-OwnedProcess($entry) {
     if (-not $taskMarkers.ContainsKey([string]$entry.role) -or $entry.marker -ne $taskMarkers[[string]$entry.role]) {throw '进程记录校验失败，未关闭任何不明进程。'}
     $taskProcess=Get-Process -Id ([int]$entry.pid) -ErrorAction SilentlyContinue
     if (-not $taskProcess) {return}
-    if ($taskProcess.StartTime.ToUniversalTime().Ticks.ToString() -ne $entry.started -or $taskProcess.Path -ne $entry.executable) {return}
+    if ($taskProcess.StartTime.ToUniversalTime().Ticks.ToString() -ne $entry.started) {return}
     $taskInfo=Get-CimInstance Win32_Process -Filter "ProcessId=$($entry.pid)"
+    # Process.Path can transiently be empty; unavailable metadata is not proof of exit.
+    $taskExecutable=$taskInfo.ExecutablePath
+    if (-not $taskExecutable) {$taskExecutable=$taskProcess.Path}
+    if (-not $entry.executable -or -not $taskExecutable) {throw '暂时无法读取进程路径，已保留启动记录，请重试关闭。'}
+    if ($taskExecutable -ne $entry.executable) {throw '进程路径与启动记录不符，已保留记录，未关闭不明进程。'}
     if (-not $taskInfo.CommandLine -or $taskInfo.CommandLine.IndexOf($entry.marker,[StringComparison]::OrdinalIgnoreCase) -lt 0) {throw '无法确认进程归属，请保留启动记录后重试。'}
     return $taskProcess
 }
@@ -99,7 +104,12 @@ function Remember-Process([string]$role,$process,[string]$marker) {
     if ($process.HasExited) {throw "$role 未能启动，请查看运行日志。"}
     # Refresh metadata through an independent process handle after creation.
     $taskLive=Get-Process -Id $process.Id -ErrorAction Stop
-    $taskEntry=[pscustomobject]@{role=$role;pid=$taskLive.Id;started=$taskLive.StartTime.ToUniversalTime().Ticks.ToString();executable=$taskLive.Path;marker=$marker}
+    $taskInfo=Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)"
+    $taskExecutable=$taskInfo.ExecutablePath
+    if (-not $taskExecutable) {$taskExecutable=$taskLive.Path}
+    # The executable used to start this process is a safe fallback if metadata is unavailable.
+    if (-not $taskExecutable) {$taskExecutable=$process.StartInfo.FileName}
+    $taskEntry=[pscustomobject]@{role=$role;pid=$taskLive.Id;started=$taskLive.StartTime.ToUniversalTime().Ticks.ToString();executable=$taskExecutable;marker=$marker}
     $script:State.processes=@($script:State.processes)+$taskEntry
     Write-State
 }
@@ -250,6 +260,15 @@ if ($Action -ne 'Ui') {
     exit 0
 }
 
+$script:UiMutex=New-Object Threading.Mutex($false,"Local\MeetingLauncherUi-$taskMutexName")
+$taskUiLocked=$false
+try {$taskUiLocked=$script:UiMutex.WaitOne(0)} catch [Threading.AbandonedMutexException] {$taskUiLocked=$true}
+$script:WakeEvent=New-Object Threading.EventWaitHandle($false,[Threading.EventResetMode]::AutoReset,"Local\MeetingLauncherWake-$taskMutexName")
+if (-not $taskUiLocked) {
+    $script:WakeEvent.Set() | Out-Null
+    $script:WakeEvent.Dispose();$script:UiMutex.Dispose();$script:Mutex.Dispose()
+    exit 0
+}
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @"
@@ -257,11 +276,25 @@ using System;
 using System.Runtime.InteropServices;
 public static class MeetingLauncherWindow {
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr handle, int command);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr handle);
 }
 "@
 [Windows.Forms.Application]::EnableVisualStyles()
 $script:Form=New-Object Windows.Forms.Form
 $script:Form.Text='会议室项目 · 启动工具'
+$taskExeIcon=Join-Path $script:ProjectRoot '会议室预约系统.exe'
+if (Test-Path -LiteralPath $taskExeIcon) {$script:Form.Icon=[Drawing.Icon]::ExtractAssociatedIcon($taskExeIcon)}
+$script:ActivationTimer=New-Object Windows.Forms.Timer
+$script:ActivationTimer.Interval=250
+$script:ActivationTimer.Add_Tick({
+    if ($script:WakeEvent.WaitOne(0)) {
+        if ($script:Form.WindowState -eq 'Minimized') {$script:Form.WindowState='Normal'}
+        [MeetingLauncherWindow]::ShowWindow($script:Form.Handle,5) | Out-Null
+        $script:Form.Activate();$script:Form.BringToFront()
+        [MeetingLauncherWindow]::SetForegroundWindow($script:Form.Handle) | Out-Null
+    }
+})
+$script:ActivationTimer.Start()
 $script:Form.ClientSize=New-Object Drawing.Size(470,245)
 $script:Form.StartPosition='CenterScreen'
 $script:Form.FormBorderStyle='FixedDialog'; $script:Form.MaximizeBox=$false
@@ -315,6 +348,7 @@ $script:Form.Add_Shown({
         if ('backend' -in $taskRoles -and 'frontend' -in $taskRoles) {$script:StatusLabel.Text="运行中 · $($script:State.mode)"}
         elseif ($taskRoles.Count) {$script:StatusLabel.Text='服务未完整启动，可先关闭全部再启动。'}
     } catch {$script:StatusLabel.Text='无法读取启动状态，请保留记录并检查。'}
+    if ($AutoStart) {Invoke-UiOperation 'Start'}
 })
 $taskLogs.Add_LinkClicked({Start-Process -FilePath 'explorer.exe' -ArgumentList ('"'+$script:WorkRoot+'"')})
 $script:Form.Add_FormClosing({
@@ -325,4 +359,8 @@ $script:Form.Add_FormClosing({
         [Windows.Forms.MessageBox]::Show($script:Form,$_.Exception.Message,'关闭未完成','OK','Warning') | Out-Null
     }
 })
-try {[Windows.Forms.Application]::Run($script:Form)} finally {$script:Mutex.Dispose(); $script:Form.Dispose()}
+try {[Windows.Forms.Application]::Run($script:Form)} finally {
+    $script:ActivationTimer.Stop();$script:ActivationTimer.Dispose()
+    $script:WakeEvent.Dispose();$script:UiMutex.ReleaseMutex();$script:UiMutex.Dispose()
+    $script:Mutex.Dispose();$script:Form.Dispose()
+}

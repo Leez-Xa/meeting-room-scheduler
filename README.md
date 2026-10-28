@@ -50,6 +50,20 @@ npm ci
 npm run build
 ```
 
+## Windows 本机 EXE 启动入口
+
+先按上述步骤准备 JDK、Node.js、后端 JAR 和前端依赖。在项目根目录运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-launcher.ps1
+```
+
+构建脚本使用 Windows 自带 .NET Framework 的 C# 编译器，不下载安装；未找到编译器会提示。生成 `会议室预约系统.exe` 后双击，即可自动启动前后端并打开独立浏览器页面。重复打开会回到已有控制窗口；点击“关闭全部”或关闭控制窗口会停止工具管理的服务。也可直接运行 `powershell -NoProfile -STA -ExecutionPolicy Bypass -File scripts/project-launcher.ps1` 打开控制窗口。
+
+EXE 需留在项目根目录，与 `scripts/`、`backend/`、`frontend/` 一起使用，可创建快捷方式。它是本机启动入口，仍需已有运行环境；源码仓库不包含生成的二进制文件。构建脚本拒绝覆盖已有目标，重新构建可指定 `-OutputPath .\会议室预约系统新版.exe`。
+
+无现成 MySQL 配置时使用 H2 demo；使用 MySQL 时先完成下述建表、迁移，并在启动进程环境中设置数据库连接参数。本机私有运行目录和数据库凭据不随源码发布。端口被其他启动方式占用时会提示，工具不会接管不明进程。
+
 ## 数据库升级
 
 H2 全新库在启动时由 `backend/src/main/resources/schema.sql` 初始化。使用 MySQL 时先完成下述建库与初始化。已有 MySQL 数据库应先备份，再依次在目标数据库中执行：
