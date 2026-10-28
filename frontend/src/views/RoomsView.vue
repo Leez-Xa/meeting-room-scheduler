@@ -144,7 +144,7 @@ onUnmounted(() => { if (clockTimer) clearInterval(clockTimer); requestVersion++ 
 .room-color-legend { display:flex; flex-wrap:wrap; gap:10px 23px; margin:0 0 18px; font-size:12px; color:#4d6556; }
 .room-color-legend span { display:flex; align-items:center; gap:7px; }
 .room-color-legend i { width:9px; height:9px; border-radius:3px; }
-.schedule-surface { background:#fff; border:1px solid #dce5df; border-radius:8px; overflow:hidden; min-height:240px; }
+.schedule-surface { background:#fff; border:1px solid #dce5df; border-radius:8px; overflow:clip; min-height:240px; }
 .schedule-date-toolbar { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:20px; border-bottom:1px solid #e1e9e3; }
 .schedule-date-toolbar h2 { font:600 18px/1.5 "Microsoft YaHei",sans-serif; margin:0; color:#2d4537; }
 .schedule-date-toolbar p { margin:4px 0 0; font-size:11px; color:#64796b; }

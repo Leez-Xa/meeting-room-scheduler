@@ -16,6 +16,10 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ open: [event: ScheduleEvent]; select: [room: Room, start: string, end: string] }>()
 const scroller = ref<HTMLElement>()
+const headerScroller = ref<HTMLElement>()
+function syncHeaders() {
+  if (headerScroller.value && scroller.value) headerScroller.value.scrollLeft = scroller.value.scrollLeft
+}
 const open = computed(() => timeMinutes(props.rules.openTime))
 const close = computed(() => timeMinutes(props.rules.closeTime))
 const minuteHeight = 1.6
@@ -44,10 +48,9 @@ function scrollRooms(direction: number) { scroller.value?.scrollBy({ left: direc
 
 <template>
 <div class="room-day-schedule">
-  <div class="day-instructions"><span>一列一间会议室 · 点击未来空闲时段发起预约</span><div class="scroll-controls"><button type="button" aria-label="向左查看会议室" @click="scrollRooms(-1)">‹</button><span>左右滚动查看更多</span><button type="button" aria-label="向右查看会议室" @click="scrollRooms(1)">›</button></div></div>
-  <div ref="scroller" class="day-scroller" tabindex="0" aria-label="按会议室展示的日排期，可上下和左右滚动">
-    <div class="day-grid" :style="{ minWidth: `${64 + rooms.length * 242}px` }">
-      <div class="day-headers" :style="columns">
+  <div class="day-instructions"><span>全天时段完整展开 · 上下滚动页面，左右查看会议室</span><div class="scroll-controls"><button type="button" aria-label="向左查看会议室" @click="scrollRooms(-1)">‹</button><span>左右滚动查看更多</span><button type="button" aria-label="向右查看会议室" @click="scrollRooms(1)">›</button></div></div>
+  <div ref="headerScroller" class="day-header-scroller">
+      <div class="day-headers" :style="{ ...columns, minWidth: `${64 + rooms.length * 242}px` }">
         <div class="time-corner">时间</div>
         <div v-for="room in rooms" :key="room.id" class="day-room-header" :style="{ '--room-ink': colors[room.id]?.ink, '--room-line': colors[room.id]?.line }">
           <div><strong><i></i>{{ room.roomName }}</strong><span v-if="!room.active" class="inactive-label">停用</span></div>
@@ -55,6 +58,9 @@ function scrollRooms(direction: number) { scroller.value?.scrollBy({ left: direc
           <p class="header-devices" :title="devices(room)">{{ devices(room) }}</p>
         </div>
       </div>
+  </div>
+  <div ref="scroller" class="day-scroller" tabindex="0" aria-label="按会议室展示的日排期，左右滚动查看会议室，上下滚动页面查看全天时段" @scroll="syncHeaders">
+    <div class="day-grid" :style="{ minWidth: `${64 + rooms.length * 242}px` }">
       <div class="day-body" :style="{ ...columns, height: `${gridHeight}px` }">
         <div class="day-times"><span v-for="(slot, index) in slots.filter((_, index) => index % 2 === 0)" :key="slot.start" :style="{ top: `${(slot.start - open) * minuteHeight}px` }" :class="{ first: index === 0 }">{{ minuteLabel(Math.round(slot.start)) }}</span></div>
         <div v-for="room in rooms" :key="room.id" class="day-room-column" :class="{ inactive: !room.active }" :style="{ '--room-ink': colors[room.id]?.ink, '--room-wash': colors[room.id]?.wash, '--room-line': colors[room.id]?.line }">
@@ -79,9 +85,10 @@ function scrollRooms(direction: number) { scroller.value?.scrollBy({ left: direc
 .day-instructions { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:11px 19px; color:#536a5c; background:#fafcfb; border-bottom:1px solid var(--schedule-border); font-size:12px; }
 .scroll-controls { display:flex; align-items:center; gap:10px; white-space:nowrap; }
 .scroll-controls button { border:1px solid #d7e3db; border-radius:5px; background:#fff; color:#39634e; width:28px; height:25px; cursor:pointer; font-size:18px; }
-.day-scroller { max-height:710px; overflow:auto; scrollbar-gutter:stable; overscroll-behavior:contain; }
+.day-scroller { max-width:100%; overflow-x:auto; overflow-y:hidden; scrollbar-width:auto; scrollbar-color:#718679 #edf2ef; }
+.day-header-scroller { position:sticky; top:0; z-index:5; overflow:hidden; background:#fff; }
 .day-headers,.day-body { display:grid; }
-.day-headers { position:sticky; top:0; z-index:5; background:#fff; }
+.day-headers { background:#fff; }
 .time-corner { position:sticky; left:0; z-index:7; background:#fbfcfb; display:grid; place-items:center; color:#61766a; font-size:11px; border-right:1px solid var(--schedule-border); border-bottom:1px solid var(--schedule-border); }
 .day-room-header { height:104px; padding:15px 16px 10px; border-right:1px solid var(--schedule-border); border-bottom:1px solid var(--schedule-border); min-width:0; background:#fff; }
 .day-room-header>div { display:flex; align-items:center; gap:9px; }
@@ -124,5 +131,5 @@ function scrollRooms(direction: number) { scroller.value?.scrollBy({ left: direc
 .day-event.narrow strong { font-size:11px; line-height:16px; }
 .day-footnote { border-top:1px solid var(--schedule-border); padding:12px 18px; font-size:11px; line-height:1.7; color:#5b7263; }
 button:focus-visible { outline:2px solid #218261; outline-offset:-2px; }
-@media(max-width:760px) { .day-instructions { align-items:flex-start; flex-direction:column; padding:10px 12px; }.day-scroller { max-height:640px; }.day-footnote { padding:10px 12px; } }
+@media(max-width:760px) { .day-instructions { align-items:flex-start; flex-direction:column; padding:10px 12px; }.day-footnote { padding:10px 12px; } }
 </style>
