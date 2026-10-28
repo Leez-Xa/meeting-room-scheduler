@@ -32,6 +32,13 @@ public class DemoDataInitializer implements CommandLineRunner {
         insertUser("employee", "普通员工", password, tech, "EMPLOYEE", 5);
         insertUser("ops-employee", "运营员工", password, ops, "EMPLOYEE", 2);
         insertUser("ops-admin", "运营部门管理员", password, ops, "DEPT_ADMIN", 2);
+        // Public fictional demo accounts; existing databases are never re-seeded.
+        insertUser("employee2", "研发员工二", password, tech, "EMPLOYEE", 2);
+        insertUser("employee3", "研发员工三", password, tech, "EMPLOYEE", 3);
+        insertUser("employee4", "研发员工四", password, tech, "EMPLOYEE", 4);
+        insertUser("employee5", "研发员工五", password, tech, "EMPLOYEE", 5);
+        insertUser("ops-employee2", "运营员工二", password, ops, "EMPLOYEE", 2);
+        insertUser("ops-employee3", "运营员工三", password, ops, "EMPLOYEE", 3);
         jdbc.update("INSERT INTO meeting_room(room_name,floor_no,capacity,location) VALUES ('晨曦厅',1,8,'A座 1层东侧'),('远山厅',2,20,'A座 2层中庭'),('星河厅',3,12,'A座 3层西侧'),('协作间',4,6,'A座 4层南侧')");
         Long r1 = jdbc.queryForObject("SELECT id FROM meeting_room WHERE room_name='晨曦厅'", Long.class);
         Long r2 = jdbc.queryForObject("SELECT id FROM meeting_room WHERE room_name='远山厅'", Long.class);
@@ -41,6 +48,15 @@ public class DemoDataInitializer implements CommandLineRunner {
         addDevice(r2, "投影仪", "PROJECTOR", 1); addDevice(r2, "麦克风", "MIC", 4); addDevice(r2, "视频会议", "VIDEO", 1);
         addDevice(r3, "投影仪", "PROJECTOR", 1); addDevice(r3, "麦克风", "MIC", 4);
         addDevice(r4, "显示器", "DISPLAY", 1); addDevice(r4, "麦克风", "MIC", 1);
+        jdbc.update("INSERT INTO meeting_room(room_name,floor_no,capacity,location) VALUES ('云杉厅',2,8,'A座 2层东侧'),('听雨厅',3,10,'A座 3层南侧'),('映月厅',4,16,'A座 4层西侧'),('多功能厅',5,30,'A座 5层中庭')");
+        Long r5 = jdbc.queryForObject("SELECT id FROM meeting_room WHERE room_name='云杉厅'", Long.class);
+        Long r6 = jdbc.queryForObject("SELECT id FROM meeting_room WHERE room_name='听雨厅'", Long.class);
+        Long r7 = jdbc.queryForObject("SELECT id FROM meeting_room WHERE room_name='映月厅'", Long.class);
+        Long r8 = jdbc.queryForObject("SELECT id FROM meeting_room WHERE room_name='多功能厅'", Long.class);
+        addDevice(r5, "显示器", "DISPLAY", 1); addDevice(r5, "麦克风", "MIC", 2);
+        addDevice(r6, "视频会议", "VIDEO", 1); addDevice(r6, "显示器", "DISPLAY", 1);
+        addDevice(r7, "投影仪", "PROJECTOR", 1); addDevice(r7, "麦克风", "MIC", 4);
+        addDevice(r8, "投影仪", "PROJECTOR", 2); addDevice(r8, "麦克风", "MIC", 6); addDevice(r8, "视频会议", "VIDEO", 1);
         Long creator = jdbc.queryForObject("SELECT id FROM sys_user WHERE username='admin'", Long.class);
         jdbc.update("UPDATE dept SET create_by=?,update_by=? WHERE create_by IS NULL", creator, creator);
         jdbc.update("UPDATE sys_user SET create_by=?,update_by=? WHERE create_by IS NULL", creator, creator);
