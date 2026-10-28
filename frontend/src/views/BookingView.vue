@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Calendar, Check, Document, Promotion, Refresh } from '@element-plus/icons-vue'
 import { api, ApiError, showError } from '../api/client'
 import BookingTimePicker from '../components/BookingTimePicker.vue'
 import { bookingTimeError, serverTimeAfter } from '../utils/bookingTime'
 import { useAuthStore } from '../stores/auth'
-import type { Meeting, Recommendation, Room, User, BookingRules, RecurringSubmissionResult } from '../types'
+import type { Meeting, Recommendation, Room, User, BookingRules, RecurringSubmissionResult, ConflictPreview } from '../types'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
@@ -26,11 +26,29 @@ const form = reactive({ id: null as string|null, subject: '', startTime: '', end
 const attendeeCount = computed(() => new Set([auth.user?.id, ...form.attendeeIds]).size)
 const selectedRoom = computed(() => rooms.value.find(r => r.id === form.roomId))
 const deviceLabels: Record<string,string> = { PROJECTOR: '投影仪', MIC: '麦克风', VIDEO: '视频会议设备', DISPLAY: '显示器' }
-const payload = () => ({ id: form.id, subject: form.subject, startTime: form.startTime, endTime: form.endTime, roomId: form.roomId || null, attendeeIds: form.attendeeIds, attendNum: attendeeCount.value, devices: Object.fromEntries(Object.entries(form.devices).filter(([,quantity]) => quantity > 0)) })
+const payload = () => ({ id: form.id, subject: form.subject, startTime: form.startTime, endTime: form.endTime, roomId: form.roomId || null, attendeeIds: [...form.attendeeIds], attendNum: attendeeCount.value, devices: Object.fromEntries(Object.entries(form.devices).filter(([,quantity]) => quantity > 0)) })
 async function recommend() {
   if (timeError()) { recommendations.value = []; return }
   loadingRecommendations.value = true
   try { const params = new URLSearchParams({ attendNum: String(attendeeCount.value), floorNo: String(auth.user!.floorNo) }); if (form.startTime) params.set('start', form.startTime); if (form.endTime) params.set('end', form.endTime); for (const [type,quantity] of Object.entries(form.devices)) if (quantity > 0) params.set(`device_${type}`, String(quantity)); recommendations.value = await api(`/meetings/recommendations?${params}`) } catch (e) { showError(e) } finally { loadingRecommendations.value = false }
+}
+async function confirmConflicts(preview: ConflictPreview, changed = false): Promise<boolean> {
+  if (!preview.warnings.length) return true
+  try {
+    await ElMessageBox.confirm(h('div', [
+      ...(changed ? [h('p', '确认期间人员安排发生变化，请核对最新冲突后再次确认。')] : []),
+      h('p', '以下人员在所选时段已有会议，可能无法同时参加：'),
+      h('ul', { style: 'max-height: 240px; overflow-y: auto; padding-left: 20px; overflow-wrap: anywhere' }, preview.warnings.map(warning => h('li', warning))),
+      h('p', '本次预约尚未提交。确认继续后将提交审批，请自行协调人员安排。'),
+    ]), changed ? '人员安排已变化，请重新确认' : '人员时间可能冲突，是否继续提交？', {
+      type: 'warning', confirmButtonText: '确认继续提交', cancelButtonText: '返回修改',
+      distinguishCancelAndClose: true, closeOnClickModal: true,
+    })
+    return true
+  } catch (action) {
+    if (action === 'cancel' || action === 'close') return false
+    throw action
+  }
 }
 async function save(submit: boolean) {
   if (busy.value) return
@@ -42,11 +60,27 @@ async function save(submit: boolean) {
   conflictDates.value = []
   try {
     if (submit) {
-      const result = form.recurring
-        ? await api<RecurringSubmissionResult>('/meetings/series/submit', { method: 'POST', body: JSON.stringify({ ...payload(), occurrenceCount: form.occurrenceCount }) })
-        : await api<{meeting: Meeting; warnings: string[]}>('/meetings/submit', { method: 'POST', body: JSON.stringify(payload()) })
-      ElMessage.success(form.recurring ? `周期预约已提交，共 ${form.occurrenceCount} 场，等待审批` : '预约已提交，等待审批')
-      result.warnings.forEach(warning => ElMessage.warning({ message: warning, duration: 7000 }))
+      const recurring = form.recurring
+      const count = form.occurrenceCount
+      const request = { ...payload(), ...(recurring ? { occurrenceCount: count } : {}) }
+      const basePath = recurring ? '/meetings/series' : '/meetings'
+      let preview = await api<ConflictPreview>(`${basePath}/check-conflicts`, { method: 'POST', body: JSON.stringify(request) })
+      let conflictsChanged = false
+      while (true) {
+        if (!await confirmConflicts(preview, conflictsChanged)) return
+        try {
+          await api<RecurringSubmissionResult | { meeting: Meeting; warnings: string[] }>(`${basePath}/submit`, {
+            method: 'POST', body: JSON.stringify({ ...request, conflictConfirmation: preview.confirmationToken }),
+          })
+          break
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.code !== 'ATTENDEE_CONFIRMATION_REQUIRED'
+              || !error.details?.warnings?.length || !error.details.confirmationToken) throw error
+          preview = { warnings: error.details.warnings, confirmationToken: error.details.confirmationToken }
+          conflictsChanged = true
+        }
+      }
+      ElMessage.success(recurring ? `周期预约已提交，共 ${count} 场，等待审批` : '预约已提交，等待审批')
       router.push('/meetings')
     }
     else { const draft = await api<Meeting>('/meetings/drafts', { method: 'POST', body: JSON.stringify(payload()) }); form.id = draft.id; ElMessage.success('草稿已保存') }

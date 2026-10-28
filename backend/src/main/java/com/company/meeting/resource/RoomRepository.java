@@ -58,13 +58,19 @@ public class RoomRepository {
     }
 
     public boolean hasUserConflict(Long userId, LocalDateTime start, LocalDateTime end, Long exceptId) {
-        Integer count = jdbc.queryForObject("""
-                SELECT COUNT(*) FROM meeting_book b
+        return !userConflictKeys(userId, start, end, exceptId).isEmpty();
+    }
+
+    // Keys stay server-side; they detect changed meetings without exposing other meetings' details.
+    public List<String> userConflictKeys(Long userId, LocalDateTime start, LocalDateTime end, Long exceptId) {
+        return jdbc.query("""
+                SELECT b.id, b.start_time, b.end_time FROM meeting_book b
                 WHERE b.deleted = 0 AND b.status IN ('PENDING','APPROVED','IN_PROGRESS')
                   AND b.start_time < ? AND b.end_time > ? AND (? IS NULL OR b.id <> ?)
                   AND (b.user_id = ? OR EXISTS (SELECT 1 FROM meeting_attendee a WHERE a.book_id = b.id AND a.user_id = ? AND a.deleted=0))
-                """, Integer.class, end, start, exceptId, exceptId, userId, userId);
-        return count != null && count > 0;
+                ORDER BY b.id
+                """, (rs, row) -> rs.getLong("id") + "@" + rs.getTimestamp("start_time").toLocalDateTime()
+                        + "/" + rs.getTimestamp("end_time").toLocalDateTime(), end, start, exceptId, exceptId, userId, userId);
     }
 
     public Map<String, Integer> deviceInventory(Long roomId) {

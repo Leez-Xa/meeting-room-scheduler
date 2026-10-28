@@ -41,6 +41,18 @@ public class MeetingController {
         return ApiResponse.ok(service.saveDraft(request, user), "草稿已保存");
     }
 
+    @PostMapping("/meetings/check-conflicts")
+    public ApiResponse<MeetingDtos.ConflictPreview> checkConflicts(@Valid @RequestBody MeetingDtos.SubmitRequest request,
+                                                                  @AuthenticationPrincipal UserPrincipal user) {
+        return ApiResponse.ok(service.checkConflicts(request, user));
+    }
+
+    @PostMapping("/meetings/series/check-conflicts")
+    public ApiResponse<MeetingDtos.ConflictPreview> checkRecurringConflicts(@Valid @RequestBody MeetingDtos.RecurringSubmitRequest request,
+                                                                           @AuthenticationPrincipal UserPrincipal user) {
+        return ApiResponse.ok(service.checkRecurringConflicts(request, user));
+    }
+
     @PostMapping("/meetings/submit")
     public ApiResponse<MeetingDtos.SubmissionResult> submit(@Valid @RequestBody MeetingDtos.SubmitRequest request, @AuthenticationPrincipal UserPrincipal user) {
         return ApiResponse.ok(service.submit(request, user), "预约已提交，等待审批");

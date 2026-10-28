@@ -6,6 +6,7 @@ export interface Room { id: string; roomName: string; floorNo: number; capacity:
 export interface Attendee { userId: string; realName: string; username: string; deptName: string }
 export interface Meeting { id: string; userId: string; applicantName: string; deptId: string; deptName: string; roomId: string; roomName: string; floorNo: number; subject: string; attendNum: number; startTime: string; endTime: string; status: MeetingStatus; auditComment?: string; cancelReason?: string; attendees: Attendee[]; devices: { deviceType: string; quantity: number }[]; seriesId?: string; seriesIndex?: number; seriesTotal?: number }
 export interface RecurringSubmitRequest { subject: string; attendNum: number; startTime: string; endTime: string; roomId: string; occurrenceCount: number; attendeeIds: string[]; devices: Record<string, number> }
+export interface ConflictPreview { warnings: string[]; confirmationToken: string }
 export interface RecurringSubmissionResult { seriesId: string; meetings: Meeting[]; warnings: string[] }
 export interface SeriesActionResult { seriesId: string; meetings: Meeting[] }
 export interface Recommendation { roomId: string; roomName: string; floorNo: number; capacity: number; distance: number; capacityScore: number; deviceScore: number; floorScore: number; totalScore: number; reason: string }

@@ -59,6 +59,65 @@ public class MeetingService {
         return meetings.findById(id);
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
+    public MeetingDtos.ConflictPreview checkConflicts(MeetingDtos.SubmitRequest request, UserPrincipal principal) {
+        validateBasic(request.subject(), request.attendNum(), request.startTime(), request.endTime());
+        rules.validateBookingWindow(request.startTime(), request.endTime());
+        if (request.id() != null) {
+            MeetingRepository.MeetingRow draft = meetings.findById(request.id());
+            if (draft == null || !draft.userId().equals(principal.id()) || !draft.status().equals("DRAFT")) {
+                throw new BizException("INVALID_STATUS", "只有本人草稿可以修改");
+            }
+        }
+        return conflictPreview(normalizeAttendees(request.attendeeIds(), principal), request.startTime(), request.endTime(),
+                1, request.id(), request.roomId(), principal);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
+    public MeetingDtos.ConflictPreview checkRecurringConflicts(MeetingDtos.RecurringSubmitRequest request, UserPrincipal principal) {
+        validateBasic(request.subject(), request.attendNum(), request.startTime(), request.endTime());
+        validateOccurrenceCount(request.occurrenceCount());
+        rules.validateBookingWindow(request.startTime(), request.endTime());
+        return conflictPreview(normalizeAttendees(request.attendeeIds(), principal), request.startTime(), request.endTime(),
+                request.occurrenceCount(), null, request.roomId(), principal);
+    }
+
+    private void validateOccurrenceCount(Integer count) {
+        if (count == null || count < 2 || count > 12) throw new BizException("INVALID_OCCURRENCE_COUNT", "周期次数必须为2到12次");
+    }
+
+    private MeetingDtos.ConflictPreview conflictPreview(List<Long> attendeeIds, LocalDateTime start, LocalDateTime end,
+                                                         int count, Long exceptId, Long roomId, UserPrincipal principal) {
+        List<Long> sortedAttendees = attendeeIds.stream().sorted().toList();
+        Map<Long, String> names = users.listUsers().stream().collect(Collectors.toMap(UserRepository.UserSummary::id, UserRepository.UserSummary::realName));
+        List<String> warnings = new ArrayList<>();
+        StringBuilder fingerprint = new StringBuilder().append(principal.id()).append('|').append(exceptId).append('|')
+                .append(roomId).append('|').append(start).append('|').append(end).append('|').append(count).append('|').append(sortedAttendees);
+        for (int index = 0; index < count; index++) {
+            LocalDateTime occurrenceStart = start.plusWeeks(index), occurrenceEnd = end.plusWeeks(index);
+            for (Long attendeeId : sortedAttendees) {
+                List<String> keys = rooms.userConflictKeys(attendeeId, occurrenceStart, occurrenceEnd, exceptId);
+                if (!keys.isEmpty()) {
+                    warnings.add(occurrenceStart.toLocalDate() + " " + occurrenceStart.toLocalTime() + "–" + occurrenceEnd.toLocalTime()
+                            + "：" + names.getOrDefault(attendeeId, "参会人") + "在该时段已有会议");
+                    fingerprint.append('|').append(index).append(':').append(attendeeId).append(':').append(keys);
+                }
+            }
+        }
+        try {
+            String token = warnings.isEmpty() ? "" : java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(fingerprint.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            return new MeetingDtos.ConflictPreview(warnings, token);
+        } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+    }
+
+    private void requireConflictConfirmation(MeetingDtos.ConflictPreview preview, String confirmation) {
+        if (!preview.warnings().isEmpty() && !preview.confirmationToken().equals(confirmation)) {
+            throw new BizException("ATTENDEE_CONFIRMATION_REQUIRED", "人员安排可能存在冲突，请确认后再提交",
+                    org.springframework.http.HttpStatus.CONFLICT, preview);
+        }
+    }
+
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public MeetingDtos.SubmissionResult submit(MeetingDtos.SubmitRequest request, UserPrincipal principal) {
         validateBasic(request.subject(), request.attendNum(), request.startTime(), request.endTime());
@@ -67,7 +126,7 @@ public class MeetingService {
         Map<String, Integer> deviceRequirements = normalizeDevices(request.devices());
         RoomRepository.RoomRow room = rooms.lockRoom(request.roomId());
         rules.validateLockedBookingWindow(request.startTime(), request.endTime());
-        Long draftId = requestDraftForSubmit(request, principal);
+        if (request.id() != null) ownDraft(request.id(), principal);
         if (room == null || !room.active()) throw new BizException("ROOM_UNAVAILABLE", "会议室不存在或已停用");
         if (room.capacity() < attendeeIds.size()) throw new BizException("CAPACITY_NOT_ENOUGH", "会议室容量不足");
         Map<String, Integer> inventory = rooms.deviceInventory(room.id());
@@ -76,18 +135,18 @@ public class MeetingService {
                 throw new BizException("DEVICE_NOT_ENOUGH", "会议室缺少设备：" + entry.getKey());
             }
         }
-        if (rooms.hasRoomConflict(room.id(), request.startTime(), request.endTime(), draftId)) {
+        if (rooms.hasRoomConflict(room.id(), request.startTime(), request.endTime(), request.id())) {
             throw new BizException("ROOM_CONFLICT", "会议室在该时间段已被占用");
         }
+        MeetingDtos.ConflictPreview preview = conflictPreview(attendeeIds, request.startTime(), request.endTime(), 1, request.id(), room.id(), principal);
+        requireConflictConfirmation(preview, request.conflictConfirmation());
+        Long draftId = requestDraftForSubmit(request, principal);
         meetings.updateDraft(draftId, principal.id(), request.subject(), attendeeIds.size(), request.startTime(), request.endTime(), room.id());
         meetings.replaceAttendees(draftId, attendeeIds);
         meetings.replaceDevices(draftId, deviceRequirements);
         if (meetings.submit(draftId, room.id(), principal.id(), principal.role()) == 0) throw new BizException("INVALID_STATUS", "只有草稿可以提交");
         meetings.bindDevices(draftId, room.devices().stream().filter(RoomRepository.DeviceRow::active).toList(), principal.id());
-        List<String> warnings = attendeeIds.stream()
-                .filter(id -> rooms.hasUserConflict(id, request.startTime(), request.endTime(), draftId))
-                .map(id -> users.listUsers().stream().filter(user -> user.id().equals(id)).findFirst().map(UserRepository.UserSummary::realName).orElse("参会人") + "在该时段已有会议")
-                .toList();
+        List<String> warnings = preview.warnings();
         meetings.addAudit(principal.id(), "MEETING_SUBMIT", "提交预约：" + request.subject());
         MeetingRepository.MeetingRow submitted = meetings.findById(draftId);
         notices.notifySubmitted(submitted);
@@ -97,9 +156,7 @@ public class MeetingService {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public MeetingDtos.RecurringSubmissionResult submitRecurring(MeetingDtos.RecurringSubmitRequest request, UserPrincipal principal) {
         validateBasic(request.subject(), request.attendNum(), request.startTime(), request.endTime());
-        if (request.occurrenceCount() == null || request.occurrenceCount() < 2 || request.occurrenceCount() > 12) {
-            throw new BizException("INVALID_OCCURRENCE_COUNT", "周期次数必须为2到12次");
-        }
+        validateOccurrenceCount(request.occurrenceCount());
         List<Long> attendeeIds = normalizeAttendees(request.attendeeIds(), principal);
         Map<String, Integer> deviceRequirements = normalizeDevices(request.devices());
         RoomRepository.RoomRow room = rooms.lockRoom(request.roomId());
@@ -125,10 +182,12 @@ public class MeetingService {
             throw new BizException("RECURRING_CONFLICT", "周期预约存在会议室冲突：" + String.join("、", conflicts),
                     org.springframework.http.HttpStatus.CONFLICT, Map.of("conflictDates", conflicts));
         }
+        MeetingDtos.ConflictPreview preview = conflictPreview(attendeeIds, request.startTime(), request.endTime(), request.occurrenceCount(), null, room.id(), principal);
+        requireConflictConfirmation(preview, request.conflictConfirmation());
         Long seriesId = meetings.insertSeries(principal.id(), principal.deptId(), room.id(), request.subject(), attendeeIds.size(),
                 request.startTime(), request.endTime(), request.occurrenceCount());
         List<MeetingRepository.MeetingRow> created = new ArrayList<>();
-        List<String> warnings = new ArrayList<>();
+        List<String> warnings = preview.warnings();
         List<RoomRepository.DeviceRow> actualDevices = room.devices().stream().filter(RoomRepository.DeviceRow::active).toList();
         for (int index = 0; index < request.occurrenceCount(); index++) {
             LocalDateTime start = request.startTime().plusWeeks(index);
@@ -138,13 +197,6 @@ public class MeetingService {
             meetings.replaceAttendees(bookId, attendeeIds);
             meetings.replaceDevices(bookId, deviceRequirements);
             meetings.bindDevices(bookId, actualDevices, principal.id());
-            for (Long attendeeId : attendeeIds) {
-                if (rooms.hasUserConflict(attendeeId, start, end, bookId)) {
-                    String name = users.listUsers().stream().filter(user -> user.id().equals(attendeeId)).findFirst()
-                            .map(UserRepository.UserSummary::realName).orElse("参会人");
-                    warnings.add(start.toLocalDate() + "：" + name + "在该时段已有会议");
-                }
-            }
             MeetingRepository.MeetingRow createdMeeting = meetings.findById(bookId);
             meetings.addAudit(principal.id(), "MEETING_SERIES_SUBMIT", "提交周期预约第" + (index + 1) + "场：" + request.subject());
             notices.notifySubmitted(createdMeeting);

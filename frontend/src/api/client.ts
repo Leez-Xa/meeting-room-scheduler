@@ -1,9 +1,10 @@
 import { ElMessage } from 'element-plus'
+import type { ConflictPreview } from '../types'
 
 let csrfToken = ''
 
 export class ApiError extends Error {
-  constructor(message: string, public code?: string, public details?: { conflictDates?: string[] }) { super(message) }
+  constructor(message: string, public code?: string, public details?: { conflictDates?: string[] } & Partial<ConflictPreview>) { super(message) }
 }
 
 async function responseError(response: Response): Promise<never> {

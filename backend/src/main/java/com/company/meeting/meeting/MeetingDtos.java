@@ -19,13 +19,24 @@ public final class MeetingDtos {
 
     public record SubmitRequest(Long id, @NotBlank @Size(max=200) String subject, @NotNull @Min(1) Integer attendNum,
                                  @NotNull LocalDateTime startTime, @NotNull LocalDateTime endTime,
-                                 @NotNull Long roomId, List<Long> attendeeIds, Map<String, Integer> devices) {}
+                                 @NotNull Long roomId, List<Long> attendeeIds, Map<String, Integer> devices, String conflictConfirmation) {
+        public SubmitRequest(Long id, String subject, Integer attendNum, LocalDateTime startTime, LocalDateTime endTime,
+                             Long roomId, List<Long> attendeeIds, Map<String, Integer> devices) {
+            this(id, subject, attendNum, startTime, endTime, roomId, attendeeIds, devices, null);
+        }
+    }
 
     public record RecurringSubmitRequest(@NotBlank @Size(max=200) String subject, @NotNull @Min(1) Integer attendNum,
                                          @NotNull LocalDateTime startTime, @NotNull LocalDateTime endTime,
                                          @NotNull Long roomId, @NotNull @Min(2) @Max(12) Integer occurrenceCount,
-                                         List<Long> attendeeIds, Map<String, Integer> devices) {}
+                                         List<Long> attendeeIds, Map<String, Integer> devices, String conflictConfirmation) {
+        public RecurringSubmitRequest(String subject, Integer attendNum, LocalDateTime startTime, LocalDateTime endTime,
+                                      Long roomId, Integer occurrenceCount, List<Long> attendeeIds, Map<String, Integer> devices) {
+            this(subject, attendNum, startTime, endTime, roomId, occurrenceCount, attendeeIds, devices, null);
+        }
+    }
 
+    public record ConflictPreview(List<String> warnings, String confirmationToken) {}
     public record ApprovalRequest(@NotNull Boolean approved, @Size(max=500) String comment) {}
     public record CancelRequest(@Size(max=500) String reason) {}
     public record SubmissionResult(MeetingRepository.MeetingRow meeting, List<String> warnings) {}
