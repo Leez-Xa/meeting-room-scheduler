@@ -7,6 +7,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 显式启用演示数据时，仅初始化全新空库。
+ * 已有用户时跳过；只有其他基础数据时拒绝继续，防止覆盖现场。
+ * 内置账号和资源仅供演示，不是生产配置。
+ */
 @Component
 @ConditionalOnProperty(name="meeting.demo-data", havingValue="true")
 public class DemoDataInitializer implements CommandLineRunner {
@@ -15,6 +20,10 @@ public class DemoDataInitializer implements CommandLineRunner {
 
     public DemoDataInitializer(JdbcTemplate jdbc, PasswordEncoder encoder) { this.jdbc = jdbc; this.encoder = encoder; }
 
+    /**
+     * 空库内创建演示组织、账号与资源，已有数据不重置也不补种。
+     * 整个初始化在事务内，失败时不留下半套数据。
+     */
     @Override
     @Transactional
     public void run(String... args) {
@@ -64,8 +73,14 @@ public class DemoDataInitializer implements CommandLineRunner {
         jdbc.update("UPDATE device SET create_by=?,update_by=? WHERE create_by IS NULL", creator, creator);
     }
 
+    /**
+     * 写演示用户，password 参数已编码。
+     */
     private void insertUser(String username, String name, String password, Long deptId, String role, int floor) {
         jdbc.update("INSERT INTO sys_user(username,real_name,password,dept_id,role,floor_no) VALUES (?,?,?,?,?,?)", username, name, password, deptId, role, floor);
     }
+    /**
+     * 增加房间固定设备，quantity 可表达多件同类型。
+     */
     private void addDevice(Long roomId, String name, String type, int quantity) { jdbc.update("INSERT INTO device(room_id,device_name,device_type,quantity) VALUES (?,?,?,?)", roomId, name, type, quantity); }
 }

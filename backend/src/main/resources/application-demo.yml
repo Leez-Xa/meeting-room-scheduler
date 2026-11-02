@@ -1,3 +1,4 @@
+# 本机 H2 演示，文件相对后端工作目录保存，不改写 MySQL。
 spring:
   datasource:
     url: jdbc:h2:file:./data/meeting-demo;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE
@@ -8,4 +9,5 @@ spring:
     console:
       enabled: false
 meeting:
+  # 只为全新空库生成账号资源，已有数据不重置。
   demo-data: true

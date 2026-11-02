@@ -14,6 +14,11 @@ import org.springframework.transaction.annotation.Isolation;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
+/**
+ * 账号、部门、房间和固定设备的事务维护。
+ * 组织修改锁部门以协调层级与管理员数量；资源修改锁相关房间并检查占用。
+ * 设备换房按 ID 升序锁新旧房间，至少保留两名启用系统管理员以支持互审。
+ */
 @Service
 @Transactional(isolation=Isolation.READ_COMMITTED)
 public class AdminService {
@@ -31,6 +36,9 @@ public class AdminService {
         this.accounts=accounts; this.departments=departments; this.roomMapper=roomMapper; this.devices=devices;
         this.rooms=rooms; this.audit=audit; this.jdbc=jdbc; this.encoder=encoder; this.rules=rules;
     }
+    /**
+     * 只分派四种已知资源类别，不允许客户端选择任意数据库表。
+     */
     public Object list(String kind, int page, int size) {
         return switch(kind) {
             case "users" -> page(accounts, page, size);
@@ -40,23 +48,40 @@ public class AdminService {
             default -> throw new BizException("NOT_FOUND", "资源不存在");
         };
     }
+    /**
+     * 先验证分页，再拼接受限整数 LIMIT/OFFSET；逻辑删除由实体配置过滤。
+     */
     private <T> AdminDtos.Page<T> page(BaseMapper<T> mapper, int page, int size) {
         if (page<1 || page>100000 || size<1 || size>100) throw new BizException("INVALID_PAGE", "分页参数不合法");
         long total=mapper.selectCount(new QueryWrapper<>());
         var records=mapper.selectList(new QueryWrapper<T>().orderByAsc("id").last("LIMIT " + size + " OFFSET " + ((page-1)*size)));
         return new AdminDtos.Page<>(records, total, page, size);
     }
+    /**
+     * 补操作者和北京时间，新建同时补创建信息和有效标记。
+     */
     private void stamp(AdminEntities.Base entity, Long id, UserPrincipal actor) {
         entity.id=id; entity.updateBy=actor.id(); entity.updateTime=rules.now();
         if (id == null) { entity.createBy=actor.id(); entity.createTime=rules.now(); entity.deleted=0; }
     }
+    /**
+     * 按 ID 是否为空新增或更新，影响数须为 1。
+     */
     private <T> void save(BaseMapper<T> mapper, T entity, Long id) {
         int count=id==null ? mapper.insert(entity) : mapper.updateById(entity);
         if(count!=1) throw new BizException("NOT_FOUND", "资源不存在");
     }
+    /**
+     * 按 ID 顺序请求部门锁，协调组织层级、账号部门与管理员数量检查。
+     */
     private void lockOrganisation() {
         jdbc.query("SELECT id FROM dept ORDER BY id FOR UPDATE", (rs,n)->rs.getLong(1));
     }
+    /**
+     * 维护账号，校验部门、用户名唯一性及互审底线。
+     * 禁止当前管理员停用或降级自己，启用系统管理员不得降至两名以下。
+     * 新建编码密码，资料更新不得夹带改密。
+     */
     public AdminEntities.Account saveAccount(Long id, AdminDtos.AccountRequest req, UserPrincipal actor) {
         lockOrganisation();
         var department=departments.selectById(req.deptId());
@@ -77,6 +102,9 @@ public class AdminService {
         save(accounts,entity,id); audit.addAudit(actor.id(),id==null?"USER_CREATE":"USER_UPDATE","维护账号："+req.username());
         return entity;
     }
+    /**
+     * 沿父链检查环，停用前处理启用账号和子部门；层级不隐式扩大部门权限。
+     */
     public AdminEntities.Department saveDepartment(Long id, AdminDtos.DepartmentRequest req, UserPrincipal actor) {
         lockOrganisation();
         if(id!=null && departments.selectById(id)==null) throw new BizException("NOT_FOUND", "部门不存在");
@@ -93,16 +121,30 @@ public class AdminService {
         var entity=new AdminEntities.Department(); stamp(entity,id,actor); entity.deptName=req.deptName(); entity.parentId=req.parentId(); entity.sortNo=req.sortNo(); entity.status=req.status();
         save(departments,entity,id); audit.addAudit(actor.id(),"DEPARTMENT_SAVE","维护部门："+req.deptName()); return entity;
     }
+    /**
+     * 复用预约锁入口，房间不存在即拒绝维护。
+     */
     private void lockRoom(Long id) { if(rooms.lockRoom(id)==null) throw new BizException("NOT_FOUND", "会议室不存在"); }
+    /**
+     * 只要存在待审批、成功或进行中预约即拒绝维护。
+     * 当前是保守保护，资料编辑和设备修改也检查，不仅停用时检查。
+     */
     private void ensureFree(Long id) {
         Integer count=jdbc.queryForObject("SELECT COUNT(*) FROM meeting_book WHERE room_id=? AND deleted=0 AND status IN ('PENDING','APPROVED','IN_PROGRESS')",Integer.class,id);
         if(count!=null && count>0) throw new BizException("RESOURCE_IN_USE", "会议室有待审批、已批准或进行中的预约，请先处理预约");
     }
+    /**
+     * 新增或维护房间，编辑前锁房间并确认无有效预约。
+     */
     public AdminEntities.Room saveRoom(Long id, AdminDtos.RoomRequest req, UserPrincipal actor) {
         if(id!=null) { lockRoom(id); ensureFree(id); }
         var entity=new AdminEntities.Room(); stamp(entity,id,actor); entity.roomName=req.roomName(); entity.floorNo=req.floorNo(); entity.capacity=req.capacity(); entity.location=req.location(); entity.status=req.status();
         save(roomMapper,entity,id); audit.addAudit(actor.id(),"ROOM_SAVE","维护会议室："+req.roomName()); return entity;
     }
+    /**
+     * 设备归属调整对新旧房间去重、升序加锁；锁后重读归属。
+     * 防止其他管理员已经换房而本次继续按旧归属写入，两个房间均须无有效预约。
+     */
     public AdminEntities.Device saveDevice(Long id, AdminDtos.DeviceRequest req, UserPrincipal actor) {
         var previous=id==null?null:devices.selectById(id);
         if(id!=null && previous==null) throw new BizException("NOT_FOUND", "设备不存在");
@@ -116,18 +158,28 @@ public class AdminService {
         var entity=new AdminEntities.Device(); stamp(entity,id,actor); entity.roomId=req.roomId(); entity.deviceName=req.deviceName(); entity.deviceType=req.deviceType(); entity.quantity=req.quantity(); entity.status=req.status();
         save(devices,entity,id); audit.addAudit(actor.id(),"DEVICE_SAVE","维护设备："+req.deviceName()); return entity;
     }
+    /**
+     * 管理员重置并审计，不在日志或审计中写明文及密码编码。
+     */
     public void resetPassword(Long id, String password, UserPrincipal actor) {
         lockOrganisation(); var account=accounts.selectById(id);
         if(account==null) throw new BizException("NOT_FOUND", "账号不存在");
         var entity=new AdminEntities.Account(); stamp(entity,id,actor); entity.password=encode(password); accounts.updateById(entity);
         audit.addAudit(actor.id(),"PASSWORD_RESET","重置账号密码，账号ID："+id);
     }
+    /**
+     * 先核对本人旧密码再保存新编码，后续请求由过滤器撤销旧会话。
+     */
     public void changePassword(AdminDtos.PasswordRequest req, UserPrincipal actor) {
         lockOrganisation(); var account=accounts.selectById(actor.id());
         if(account==null || !encoder.matches(req.currentPassword(),account.password)) throw new BizException("WRONG_PASSWORD", "当前密码不正确");
         var entity=new AdminEntities.Account(); stamp(entity,actor.id(),actor); entity.password=encode(req.newPassword()); accounts.updateById(entity);
         audit.addAudit(actor.id(),"PASSWORD_CHANGE","用户修改本人密码");
     }
+    /**
+     * 至少 8 字符且 UTF-8 最多 72 字节，再执行 BCrypt 编码。
+     * 中文等多字节字符须按字节上限另行检查，不能仅看字符数。
+     */
     private String encode(String password) {
         if(password==null || password.length()<8 || password.getBytes(StandardCharsets.UTF_8).length>72) throw new BizException("INVALID_PASSWORD", "密码至少8字符，UTF-8编码不超过72字节");
         return encoder.encode(password);

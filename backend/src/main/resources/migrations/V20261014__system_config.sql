@@ -1,3 +1,4 @@
+-- 参数增量迁移，仅补表和默认行，不覆盖既有业务记录。
 -- Additive upgrade for an existing database; does not change existing business records.
 CREATE TABLE IF NOT EXISTS system_config (
     id BIGINT PRIMARY KEY,

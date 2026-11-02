@@ -6,12 +6,19 @@ import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * OpenAPI 元数据与类型适配，使 Long 字符串声明与实际输出一致。
+ * 描述会话和 CSRF 调用约定，文档的访问授权仍由安全过滤链控制。
+ */
 @Configuration
 public class OpenApiConfig {
     public OpenApiConfig() {
         SpringDocUtils.getConfig().replaceWithClass(Long.class, String.class);
         SpringDocUtils.getConfig().replaceWithClass(long.class, String.class);
     }
+    /**
+     * 定义接口说明与调用约定，不改变实际授权。
+     */
     @Bean
     public OpenAPI meetingOpenApi() {
         return new OpenAPI().info(new Info().title("企业会议室智能预约调度系统 API")

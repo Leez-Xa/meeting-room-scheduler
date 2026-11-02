@@ -27,12 +27,23 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 安全入口：BCrypt、Session、CSRF、路径角色与跨域设置。
+ * 账号过滤器复查旧会话，服务层继续校验部门及预约范围。
+ * 前后端分离不等于关闭 CSRF，携带 Cookie 的写请求仍需令牌。
+ */
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
+    /**
+     * 提供 BCrypt 编码与匹配，禁止存储明文。
+     */
     @Bean
     PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
 
+    /**
+     * 连接合法用户查询及密码匹配。
+     */
     @Bean
     DaoAuthenticationProvider authenticationProvider(AuthUserDetailsService service, PasswordEncoder encoder) {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
@@ -41,11 +52,18 @@ public class SecurityConfig {
         return provider;
     }
 
+    /**
+     * 提供给 JSON 登录入口主动发起认证。
+     */
     @Bean
     AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
         return configuration.getAuthenticationManager();
     }
 
+    /**
+     * 配置 Session、CSRF、路径权限与安全异常响应。
+     * 账号复查放在上下文恢复之后；登录和 CSRF 允许匿名，管理路径限制角色，其余要求登录。
+     */
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, UserRepository users, ObjectMapper mapper) throws Exception {
         var csrfRepository = new HttpSessionCsrfTokenRepository();
@@ -75,6 +93,9 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * 仅放行本机开发前端的两个来源携带 Cookie，不能随意改为来源通配。
+     */
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();

@@ -11,6 +11,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
+/**
+ * 报表参数、权限、CSV 编码和导出审计。
+ * 使用 UTF-8 BOM 支持 Excel 中文，处理 CSV 特殊字符及潜在公式文本。
+ */
 @Service
 public class MeetingReportService {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -22,6 +26,10 @@ public class MeetingReportService {
         this.meetings = meetings;
     }
 
+    /**
+     * 验证角色和筛选，生成带 BOM CSV 并审计。
+     * 当前在内存组装全量文件，大量数据需另评估分页流式输出。
+     */
     @Transactional
     public byte[] export(UserPrincipal principal, LocalDate start, LocalDate end, Long roomId, String status) {
         if (!"SYSTEM_ADMIN".equals(principal.role()) && !"DEPT_ADMIN".equals(principal.role())) {
@@ -47,6 +55,7 @@ public class MeetingReportService {
         }
         byte[] body = csv.toString().getBytes(StandardCharsets.UTF_8);
         byte[] result = new byte[body.length + 3];
+        // UTF-8 BOM 便于 Windows Excel 直接识别中文。
         result[0] = (byte) 0xEF; result[1] = (byte) 0xBB; result[2] = (byte) 0xBF;
         System.arraycopy(body, 0, result, 3, body.length);
         meetings.addAudit(principal.id(), "MEETING_REPORT_EXPORT", "导出会议报表：范围=" + principal.role()
@@ -54,6 +63,9 @@ public class MeetingReportService {
         return result;
     }
 
+    /**
+     * 每个单元经 escape，行尾 CRLF 兼容常见表格软件。
+     */
     private String line(Object... values) {
         StringBuilder result = new StringBuilder();
         for (int i = 0; i < values.length; i++) {
@@ -63,6 +75,10 @@ public class MeetingReportService {
         return result.append("\r\n").toString();
     }
 
+    /**
+     * 字符串先防公式注入，再转义引号、逗号和换行。
+     * 数值类型不因负号变为文本，公式保护针对用户来源字符串。
+     */
     private String escape(Object value) {
         String text = value == null ? "" : String.valueOf(value);
         if (value instanceof String) {

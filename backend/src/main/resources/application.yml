@@ -1,7 +1,9 @@
+# 公共启动配置，profile 覆盖同名属性；默认 demo，可启动参数显式选择 mysql。
 spring:
   application:
     name: meeting-room-scheduler
   profiles:
+    # demo 使用独立 H2 文件库，MySQL 连接配置单独管理。
     active: demo
   jackson:
     time-zone: Asia/Shanghai
@@ -9,6 +11,7 @@ spring:
       write-dates-as-timestamps: false
   sql:
     init:
+      # MySQL 默认覆盖为 never，已有库增量升级必须显式执行迁移。
       mode: always
       encoding: UTF-8
 server:
@@ -16,6 +19,7 @@ server:
   servlet:
     session:
       cookie:
+        # Cookie 不开放给脚本；会话写请求仍需要 CSRF。
         http-only: true
         same-site: lax
 springdoc:
@@ -28,6 +32,7 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 meeting:
+  # 启动默认值，参数中心保存后使用数据库规则，三项权重合计为 1。
   rules:
     workdays: [1, 2, 3, 4, 5]
     open-time: "09:00"
@@ -38,5 +43,7 @@ meeting:
     floor-penalty: 20
     draft-retention-days: 7
     reminder-minutes: 15
+  # 上轮任务结束至下轮开始的毫秒延迟，不是固定墙上时刻。
   scheduler-delay-ms: 30000
+  # 公共默认关闭种子，demo profile 显式开启，已有库仍受守卫保护。
   demo-data: false

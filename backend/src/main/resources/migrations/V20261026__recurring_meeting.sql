@@ -1,3 +1,5 @@
+-- 周期增量迁移，查询元数据后按需补列、索引和外键，可重复执行。
+-- MySQL DDL 不应当作普通业务事务整体回滚，部署前须备份并确认目标库。
 CREATE TABLE IF NOT EXISTS meeting_series (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,

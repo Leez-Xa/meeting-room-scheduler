@@ -1,3 +1,6 @@
+-- 新库初始化结构：保留核心业务表，扩展周期、需求、通知、审计与参数。
+-- IF NOT EXISTS 不升级已有表，旧库使用增量迁移；deleted=0 有效、1 逻辑删除。
+-- 部门层级不隐式扩大管理员范围。
 CREATE TABLE IF NOT EXISTS dept (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     dept_name VARCHAR(100) NOT NULL,
@@ -11,6 +14,7 @@ CREATE TABLE IF NOT EXISTS dept (
     deleted TINYINT NOT NULL DEFAULT 0
 );
 
+-- 账号角色与楼层，password 保存 BCrypt 编码。
 CREATE TABLE IF NOT EXISTS sys_user (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
@@ -30,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     CONSTRAINT fk_user_dept FOREIGN KEY (dept_id) REFERENCES dept(id)
 );
 
+-- 可预约房间，也是资源提交与维护的共用锁入口。
 CREATE TABLE IF NOT EXISTS meeting_room (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     room_name VARCHAR(100) NOT NULL,
@@ -44,6 +49,7 @@ CREATE TABLE IF NOT EXISTS meeting_room (
     deleted TINYINT NOT NULL DEFAULT 0
 );
 
+-- 归属房间的固定设备，按类型和数量匹配需求。
 CREATE TABLE IF NOT EXISTS device (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     room_id BIGINT NOT NULL,
@@ -59,6 +65,7 @@ CREATE TABLE IF NOT EXISTS device (
     CONSTRAINT fk_device_room FOREIGN KEY (room_id) REFERENCES meeting_room(id)
 );
 
+-- 每周周期组，场次状态各自保存在 meeting_book。
 CREATE TABLE IF NOT EXISTS meeting_series (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -81,6 +88,7 @@ CREATE TABLE IF NOT EXISTS meeting_series (
     INDEX idx_series_user (user_id, create_time, deleted)
 );
 
+-- 单场预约，保存生命周期及申请时角色、部门。
 CREATE TABLE IF NOT EXISTS meeting_book (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -115,6 +123,7 @@ CREATE TABLE IF NOT EXISTS meeting_book (
     INDEX idx_book_series (series_id, series_index, status, deleted)
 );
 
+-- 参会关系，唯一键配合逻辑恢复支持草稿编辑。
 CREATE TABLE IF NOT EXISTS meeting_attendee (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     book_id BIGINT NOT NULL,
@@ -130,6 +139,7 @@ CREATE TABLE IF NOT EXISTS meeting_attendee (
     INDEX idx_attendee_user (user_id, book_id)
 );
 
+-- 实际固定设备绑定，与类型需求分开。
 CREATE TABLE IF NOT EXISTS meeting_book_device (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     book_id BIGINT NOT NULL,
@@ -145,6 +155,7 @@ CREATE TABLE IF NOT EXISTS meeting_book_device (
     CONSTRAINT fk_actual_book_device_device FOREIGN KEY (device_id) REFERENCES device(id)
 );
 
+-- 用户填写的设备类型和数量。
 CREATE TABLE IF NOT EXISTS meeting_device_requirement (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     book_id BIGINT NOT NULL,
@@ -159,6 +170,7 @@ CREATE TABLE IF NOT EXISTS meeting_device_requirement (
     CONSTRAINT fk_book_device_book FOREIGN KEY (book_id) REFERENCES meeting_book(id)
 );
 
+-- 审批历史，与状态共同提交。
 CREATE TABLE IF NOT EXISTS approval_history (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     book_id BIGINT NOT NULL,
@@ -174,6 +186,7 @@ CREATE TABLE IF NOT EXISTS approval_history (
     CONSTRAINT fk_approval_operator FOREIGN KEY (operator_id) REFERENCES sys_user(id)
 );
 
+-- 敏感操作记录，不写真实凭证。
 CREATE TABLE IF NOT EXISTS audit_log (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     operator_id BIGINT NOT NULL,
@@ -188,6 +201,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     CONSTRAINT fk_audit_operator FOREIGN KEY (operator_id) REFERENCES sys_user(id)
 );
 
+-- 站内通知，notice_key 唯一约束支持重复任务去重。
 CREATE TABLE IF NOT EXISTS message_notice (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,
@@ -205,6 +219,7 @@ CREATE TABLE IF NOT EXISTS message_notice (
     CONSTRAINT fk_notice_book FOREIGN KEY (book_id) REFERENCES meeting_book(id)
 );
 
+-- id=1 单例规则，revision 检测过期编辑，JSON 保存完整快照。
 CREATE TABLE IF NOT EXISTS system_config (
     id BIGINT PRIMARY KEY,
     revision BIGINT NOT NULL DEFAULT 0,

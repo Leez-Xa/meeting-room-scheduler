@@ -1,3 +1,4 @@
+# MySQL 持久化连接，环境变量提供凭证，空密码默认值是占位。
 spring:
   datasource:
     url: ${MEETING_DB_URL:jdbc:mysql://127.0.0.1:3306/meeting_scheduler?characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
@@ -6,7 +7,9 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   sql:
     init:
+      # 禁止默认自动初始化既有库，部署时显式建库或增量迁移。
       mode: ${MEETING_DB_INIT_MODE:never}
 meeting:
+  # 只有明确需要全新演示数据时才开启。
   demo-data: ${MEETING_DEMO_DATA:false}
 

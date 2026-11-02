@@ -15,6 +15,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 
+/**
+ * CSV 文件响应入口，声明 UTF-8 与附件文件名。
+ * 服务层检查导出角色和范围，响应不套普通 JSON 外壳。
+ */
 @RestController
 @RequestMapping("/api/v1/reports")
 public class MeetingReportController {
@@ -22,6 +26,9 @@ public class MeetingReportController {
 
     public MeetingReportController(MeetingReportService service) { this.service = service; }
 
+    /**
+     * 返回 CSV 附件，解析筛选条件，服务校验角色和范围。
+     */
     @GetMapping(value = "/meetings.csv", produces = "text/csv")
     public ResponseEntity<byte[]> export(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
                                          @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
